@@ -16,11 +16,13 @@ uv pip install "flash-attn==2.8.3" --no-build-isolation
 ### Option 2: Conda Installation
 ```bash
 git submodule update --init --recursive
-conda create --name verl-tool-env python=3.10
+conda clean --all -y
+conda create -n verl-tool-env python=3.10 --no-default-packages
 conda activate verl-tool-env
-pip install -e verl
-pip install -e ".[vllm,acecoder,torl,search_tool]"
-pip install "flash-attn==2.8.3" --no-build-isolation
+pip install --no-cache-dir -e verl
+pip install --no-cache-dir -e ".[vllm,acecoder,torl,search_tool]"
+conda install cudatoolkit-dev -c conda-forge
+pip install --no-cache-dir 'flash-attn==2.8.3' --no-build-isolation
 ```
 
 ### installation of megatron
