@@ -657,7 +657,8 @@ class AgentLoopWorker:
                 batch = TensorDict(
                     {
                         "prompts": prompt_output["input_ids"],  # [1, prompt_length]
-                        "responses": response_output["input_ids"],  # [1, response_length]
+                        "responses": response_output["input_ids"],
+                        "response_mask": response_mask,  # [1, response_length]
                         "attention_mask": attention_mask,  # [1, prompt_length + response_length]
                         "input_ids": input_ids,  # [1, prompt_length + response_length]
                         "position_ids": position_ids,

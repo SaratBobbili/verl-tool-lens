@@ -72,12 +72,37 @@ def extract_answer(text, mode='math'):
         return text
     else:
         raise ValueError(f"Unsupported mode: {mode}")
+
+# def extract_turn_answer(text):
+#     # extract the tool or reasoning initially, since its one turn, lets not worry for now
+#     pass
+
+def find_first_tool_response_position(response_mask):
+    """
+    Find the first position where response_mask transitions from 1 to 0.
+    This marks where the tool response (observation) begins.
     
-@register("torl")
-class ToRLRewardManager:
+    Args:
+        response_mask: Tensor where 1 = LLM-generated token, 0 = tool response token
+    
+    Returns:
+        int or None: Position of first tool response token, or None if no tool call
+    """
+    # Find first 0 in response_mask (first tool response token)
+    mask = response_mask.cpu() if hasattr(response_mask, 'cpu') else response_mask
+    zeros = (mask == 0).nonzero(as_tuple=True)[0]
+    if len(zeros) > 0:
+        return zeros[0].item()
+    return None
+
+
+@register("torl_mtgrpo")
+class ToRLMTGRPORewardManager:
     """The reward manager.
     """
-    name="torl"
+    name="torl_mtgrpo"
+
+    #Rather than using a single reward score use turn-level and output-level rewards
 
     def __init__(self, tokenizer, num_examine, compute_score=None, reward_fn_key='data_source', **kwargs) -> None:
         self.tokenizer = tokenizer
@@ -85,33 +110,33 @@ class ToRLRewardManager:
         # self.compute_score = compute_score if compute_score else _default_compute_score
         self.compute_score = torl_compute_score
         self.reward_fn_key = reward_fn_key
+        
         self.step = None
-        self.add_format_think_penalty = False # -0.5 if not begines with <think> and end with </think>
-        self.add_format_answer_penalty = False # -0.5 if not having <answer> </answer>
-        self.add_valid_action_penalty = False # -0.25 if num turns > 0 not action not valid
-        self.add_unfinished_traj_penalty = False # -0.25 if the traj is not finished
-        self.add_no_tool_interact_penalty = False # -0.25 if the traj's num turn is 0, no interaction at all
-        self.add_code_exec_penalty = False # -0.25 if the execution has an error.
+        self.add_format_think_penalty = False # -0.2 if not begines with <think> and end with </think>
+        self.add_format_answer_penalty = False # -0.2 if not having <answer> </answer>
+        self.add_valid_action_penalty = False # -0.2 if num turns > 0 not action not valid
+        self.add_unfinished_traj_penalty = False # -0.2 if the traj is not finished
+        self.add_no_tool_interact_penalty = True # -0.2 if the traj's num turn is 0, no interaction at all
+        self.add_code_exec_penalty = True # -0.2 if the execution has an error.
+        self.lambda_turn = 1.0
 
     def add_additional_penalties(self, response: str, data_i, scores_i: dict):
         # 1.4 format penalty
         if self.add_format_think_penalty:
             match = re.search(r"<think>(.*?)</think>", response, re.DOTALL)
             if not match or not response.startswith("<think>") or response.count("<think>") != 1 or response.count("</think>") != 1:
-                scores_i['score'] -= 0.2
+                scores_i['score'] -= 0.2 * self.lambda_turn
                 scores_i['think_format_penalty'] = 1
             else:
                 scores_i['think_format_penalty'] = 0
         if self.add_format_answer_penalty:
             match = re.search(r"<answer>(.*?)</answer>", response, re.DOTALL)
             if not match or not response.endswith("</answer>") or response.count("<answer>") != 1 or response.count("</answer>") != 1:
-                scores_i['score'] -= 0.2
+                scores_i['score'] -= 0.2 * self.lambda_turn
                 scores_i['answer_format_penalty'] = 1
             else:
                 scores_i['answer_format_penalty'] = 0
-
         
-           
         if "verl_tool_metrics" in data_i.non_tensor_batch:
             verl_tool_metrics = data_i.non_tensor_batch["verl_tool_metrics"]
             if self.add_valid_action_penalty:
@@ -165,6 +190,7 @@ class ToRLRewardManager:
 
         for i in range(len(data)):
             score = {}
+
             data_item = data[i]  # DataProtoItem
 
             prompt_ids = data_item.batch['prompts']
@@ -187,7 +213,6 @@ class ToRLRewardManager:
             data_source = data_item.non_tensor_batch[self.reward_fn_key]
 
             extra_info = data_item.non_tensor_batch.get('extra_info', None)
-            
             extracted_answer = extract_answer(response_str, mode='math')
             
             torl_score = self.compute_score(
@@ -200,8 +225,15 @@ class ToRLRewardManager:
             score['score'] = torl_score
             score['has_answer'] = 1. if extracted_answer else 0.
 
+            # turn_score accuracy is the accuracy btw the ground truth and tool or reasoning response initially
+
+
+            #turn score is score and the output penalties, make sure score is different from turn score
+            matching_score = torl_score 
+            
+
             # add additional penalty
-            score = self.add_additional_penalties(response_str, data_item, score)      
+            score = self.add_additional_penalties(response_str, data_item, score)          
 
             if score['accuracy'] > 0:
                 reward_extra_info['correct_response_length'].append(valid_response_length)
@@ -221,7 +253,18 @@ class ToRLRewardManager:
                 else:
                     reward = score
 
-            reward_tensor[i, valid_response_length - 1] = reward 
+
+            response_mask = data_item.batch.get('response_mask', None)
+            if response_mask is not None:
+                tool_call_token_pos = find_first_tool_response_position(response_mask)
+            else:
+                tool_call_token_pos = None
+            if tool_call_token_pos is not None:
+                reward_tensor[i, tool_call_token_pos-1] = score['score']
+                reward_tensor[i, valid_response_length-1] = matching_score
+            
+            else:
+                reward_tensor[i, valid_response_length-1] = score['score']
 
             if data_source not in already_print_data_sources:
                 already_print_data_sources[data_source] = 0
