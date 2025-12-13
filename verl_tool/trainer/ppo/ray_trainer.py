@@ -36,7 +36,9 @@ verl.trainer.ppo.ray_trainer.process_validation_metrics = process_validation_met
 verl.workers.rollout.vllm_rollout.vllm_async_server.vLLMHttpServer = VerlToolvLLMHttpServer
 ##############################################################################
 
-class AgentRayPPOTrainer(RayPPOTrainer):
+from verl_tool.trainer.ppo.ray_trainer_igpo import RayPPOTrainerIGPO
+
+class AgentRayPPOTrainer(RayPPOTrainerIGPO):
     
     def _validate(self):
         data_source_lst = []

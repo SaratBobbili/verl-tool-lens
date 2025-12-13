@@ -2,6 +2,9 @@
 import uuid
 from copy import deepcopy
 from pprint import pprint
+from typing import Optional
+from collections import defaultdict
+
 
 import numpy as np
 import ray
@@ -16,6 +19,7 @@ from verl.trainer.ppo.metric_utils import (
     compute_throughout_metrics,
     compute_timing_metrics,
 )
+from verl.trainer.config import AlgoConfig
 from verl.trainer.ppo.reward import compute_reward, compute_reward_async
 from verl.trainer.ppo.utils import Role
 from verl.utils.checkpoint.checkpoint_manager import should_save_ckpt_esi
@@ -24,8 +28,238 @@ from verl.utils.metric import reduce_metrics
 from verl.utils.rollout_skip import RolloutSkip
 
 from tensordict import TensorDict
+from itertools import groupby
 
-from verl.trainer.ppo.ray_trainer import RayPPOTrainer
+from verl.trainer.ppo.ray_trainer import RayPPOTrainer, compute_response_mask, apply_kl_penalty, compute_advantage
+
+def groups_from_index_array(index: np.ndarray):
+    """Generate groups of indices based on the provided index array.
+
+    Args:
+        index (np.ndarray): An array where each element indicates the group ID for the corresponding data point.
+
+    Returns:
+        groups (List[torch.Tensor]): A list of tensors, each containing the indices of data points belonging to the same group.
+        idx_groups (defaultdict(list)): A dictionary mapping group IDs to lists of indices.
+    """
+    idx_groups = defaultdict(list)
+    for i, s in enumerate(index):
+        idx_groups[s].append(i)
+    groups = [torch.tensor(idxs, dtype=torch.long) for idxs in idx_groups.values()]
+    return groups, idx_groups
+
+def discounted_returns(rewards: torch.Tensor, gamma: float) -> torch.Tensor:
+    """
+    rewards: (batch_size, T) tensor
+    gamma: scalar discount factor
+    mask: (batch_size, T) tensor with 1 for valid steps and 0 for padding
+
+    returns: (batch_size, T) tensor where returns[:, t] = sum_{k=t}^{T-1} gamma^{k-t} * rewards[:, k]
+    """
+    B, T = rewards.shape
+
+    # gamma^0, gamma^1, ..., gamma^{T-1}
+    discounts = gamma ** torch.arange(T, device=rewards.device)
+
+    # Multiply rewards by gamma^t so that a simple cumsum over reversed time works
+    # (batch, T) -> (batch, T)
+    rew_discounted = rewards * discounts  # r_t * gamma^t
+
+    # Reverse time dimension
+    rew_discounted_rev = torch.flip(rew_discounted, dims=[1])
+
+    # Cumulative sum over reversed time
+    returns_rev = torch.cumsum(rew_discounted_rev, dim=1)
+
+    # Flip back and divide out gamma^t to get standard returns
+    returns = torch.flip(returns_rev, dims=[1]) / discounts
+
+    return returns
+
+def insert_at_first_false(A, B, mask):
+    bs, _ = B.shape
+
+    first_false = (~mask).float().argmax(dim=1)
+    has_false = (~mask).any(dim=1)
+    first_false = torch.where(has_false, first_false, torch.full_like(first_false, -1))
+
+    rows = has_false.nonzero(as_tuple=True)[0]
+    out = B.clone()
+    out[rows, first_false[rows]] = A[rows, 0]
+    return out
+
+
+def compute_igpo_outcome_advantage(
+    token_level_rewards: torch.Tensor,
+    info_gain_rewards: torch.Tensor,
+    info_gain_mask: torch.Tensor,
+    response_mask: torch.Tensor,
+    index: np.ndarray,
+    gamma: float = 1.0,
+    epsilon: float = 1e-6,
+    norm_adv_by_std_in_grpo: bool = True,
+    config: Optional[AlgoConfig] = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Compute advantage for IGPO.
+
+    Args:
+        token_level_rewards: `(torch.Tensor)`
+            shape is (bs, response_length)
+        info_gain_rewards: `(torch.Tensor)`
+            shape is (bs, max_turns-1)
+        info_gain_mask: `(torch.Tensor)`
+            shape is (bs, max_turns-1)
+        response_mask: `(torch.Tensor)`
+            shape is (bs, response_length)
+        index: `(np.ndarray)`
+            index array for grouping
+        epsilon: `(float)`
+            small value to avoid division by zero
+        norm_adv_by_std_in_grpo: `(bool)`
+            whether to scale the GRPO advantage
+        config: `(Optional[AlgoConfig])`
+            algorithm configuration object
+
+    Note:
+        If norm_adv_by_std_in_grpo is True, the advantage is scaled by the std, as in the original GRPO.
+        If False, the advantage is not scaled, as in Dr.GRPO (https://arxiv.org/abs/2503.20783).
+
+    Returns:
+        advantages: `(torch.Tensor)`
+            shape is (bs, response_length)
+        Returns: `(torch.Tensor)`
+            shape is (bs, response_length)
+    """
+
+    scores = token_level_rewards.sum(dim=-1)
+    # For some reason, the groups are interleaved here (as seen from index), so we cannot just split
+    # the tensors immediately. We need to first group the scores and info_gain_rewards based on index.
+    # It seems that the order of index can be arbitrary
+    # Note that we will need to restore the original order when we return the advantages
+    groups, idx_groups = groups_from_index_array(index)
+    
+    scores_grouped = [scores[g] for g in groups]
+    info_gain_rewards_grouped = [info_gain_rewards[g] for g in groups]
+    info_gain_mask_grouped = [info_gain_mask[g] for g in groups]
+
+    group_normalized_scores = []
+    group_normalized_info_gains = []
+    for i in range(len(groups)):
+        # Put all the valid rewards for a group into a single list for computing statistics
+        # info_gain_mask indicates which elements are actual turn scores and which should be ignored 
+        # (due to fewer actual turns). When the mask is applied, the remaining elements are also flattened
+        all_group_scores = scores_grouped[i].tolist() + info_gain_rewards_grouped[i][info_gain_mask_grouped[i].bool()].tolist()
+        # Compute mean and std for scores
+        mean_score = torch.mean(torch.tensor(all_group_scores))
+        std_score = torch.std(torch.tensor(all_group_scores))
+        # Temporarily concatenate the final scores with the info gain rewards for normalization
+        rollout_scores = torch.cat([scores_grouped[i].unsqueeze(-1), info_gain_rewards_grouped[i]], dim=1)
+
+        # Normalize scores
+        if norm_adv_by_std_in_grpo:
+            normalized_scores = (rollout_scores - mean_score) / (std_score + epsilon)
+        else:
+            normalized_scores = rollout_scores - mean_score
+        group_normalized_scores.append(normalized_scores[:, 0].unsqueeze(-1))
+        # Here we also zero out the elements of info_gain_rewards where the mask is False so that they do not
+        # interfere with later calculations
+        group_normalized_info_gains.append(normalized_scores[:, 1:] * info_gain_mask_grouped[i].long())
+
+    # Restore the original batch order
+    final_scores = torch.empty((scores.shape[0], 1), device=scores.device)
+    final_info_gain = torch.empty((scores.shape[0], info_gain_rewards.shape[1]), device=scores.device)
+    for i, idxs in enumerate(idx_groups.values()):
+        final_scores[idxs] = group_normalized_scores[i]
+        final_info_gain[idxs] = group_normalized_info_gains[i]
+
+    # Create a new tensor that puts the rewards in the correct order (info gains followed by outcome reward)
+    # with padding to account for different number of turns. We first extend info_gain_mask with a column
+    # that is all False, then insert the outcome reward at the first position where the mask is False on 
+    # each row. This means that a row with n turns will have the outcome reward at index n, followed by padding.
+    # Likewise, we extend final_info_gain with a column of zeros to match the new shape.
+    extended_info_gain_mask = torch.cat([info_gain_mask, torch.zeros((info_gain_mask.shape[0], 1), dtype=torch.bool, device=info_gain_mask.device)], dim=1)
+    extended_final_info_gain = torch.cat([final_info_gain, torch.zeros((final_info_gain.shape[0], 1), dtype=final_info_gain.dtype, device=final_info_gain.device)], dim=1)
+    final_scores_per_turn = insert_at_first_false(final_scores, extended_final_info_gain, extended_info_gain_mask)
+
+    # Apply discounted future rewards
+    discounted_scores_per_turn = discounted_returns(final_scores_per_turn, gamma)
+
+    # Locate range of indices corresponding to each response
+    # IMPORANT NOTE: response_mask starts at the first response token, so the first segment corresponds to the
+    # first turn's response. It also ends with padding (unless the response fills the entire length)
+    # If info_gain_mask is all False, then response_mask.diff(dim=1) has one nonzero entry (corresponding to
+    # the end of the first turn's response). 
+    # If info_gain_mask is [True, False], then there are three nonzero entries (end of first turn's response,
+    # start of second turn's response, end of second turn's response)
+    # Then each additional True in info_gain_mask adds another pair of nonzero entries (start and end of another
+    # turn's response)
+    mask_change_locs = response_mask.diff(dim=1)#.nonzero(as_tuple=False)
+
+    change = torch.cat([
+            # first element always starts a segment
+            torch.tensor([True]*mask_change_locs.shape[0], device=response_mask.device).unsqueeze(-1),  
+            mask_change_locs != 0,
+        ], 
+        dim=1)
+    segment_ids = change.cumsum(dim=1) - 1  # Shape: (bs, response_length)
+    
+    # Every segment with an even ID corresponds to a response segment. We insert a zero at every odd index
+    # in final_scores to align the true rewards with segment_ids
+    expanded_final_scores = torch.zeros((discounted_scores_per_turn.shape[0], discounted_scores_per_turn.shape[1]*2), device=final_scores.device)
+    expanded_final_scores[:, 0::2] = discounted_scores_per_turn
+    advantages = expanded_final_scores.gather(1, segment_ids)
+    
+    return advantages, advantages
+
+def compute_advantage_igpo(
+    data: DataProto,
+    adv_estimator: AdvantageEstimator,
+    gamma: float = 1.0,
+    lam: float = 1.0,
+    num_repeat: int = 1,
+    norm_adv_by_std_in_grpo: bool = True,
+    config: Optional[AlgoConfig] = None,
+) -> DataProto:
+    """Compute advantage estimates for policy optimization.
+
+    This function computes advantage estimates using various estimators like GAE, GRPO, REINFORCE++, etc.
+    The advantage estimates are used to guide policy optimization in RL algorithms.
+
+    Args:
+        data (DataProto): The data containing batched model outputs and inputs.
+        adv_estimator (AdvantageEstimator): The advantage estimator to use (e.g., GAE, GRPO, REINFORCE++).
+        gamma (float, optional): Discount factor for future rewards. Defaults to 1.0.
+        lam (float, optional): Lambda parameter for GAE. Defaults to 1.0.
+        num_repeat (int, optional): Number of times to repeat the computation. Defaults to 1.
+        norm_adv_by_std_in_grpo (bool, optional): Whether to normalize advantages by standard deviation in
+            GRPO. Defaults to True.
+        config (dict, optional): Configuration dictionary for algorithm settings. Defaults to None.
+
+    Returns:
+        DataProto: The updated data with computed advantages and returns.
+    """
+    # Back-compatible with trainers that do not compute response mask in fit
+    if "response_mask" not in data.batch.keys():
+        data.batch["response_mask"] = compute_response_mask(data)
+    
+    assert adv_estimator == AdvantageEstimator.GRPO, f"adv_estimator must be GRPO for IGPO, got {adv_estimator}"
+    # Initialize the mask for GRPO calculation
+    grpo_calculation_mask = data.batch["response_mask"]
+
+    advantages, returns = compute_igpo_outcome_advantage(
+        token_level_rewards=data.batch["token_level_rewards"],
+        info_gain_rewards=data.batch["info_gain"],
+        info_gain_mask=data.batch["info_gain_mask"],
+        response_mask=grpo_calculation_mask,
+        index=data.non_tensor_batch["uid"],
+        norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
+        gamma=gamma,
+    )
+    data.batch["advantages"] = advantages
+    data.batch["returns"] = returns
+
+    return data
 
 class RayPPOTrainerIGPO(RayPPOTrainer):
     """RayPPOTrainer from verl with Importance-Guided Policy Optimization (IGPO) support.
@@ -126,11 +360,13 @@ class RayPPOTrainerIGPO(RayPPOTrainer):
                 with marked_timer("step", timing_raw):
                     ############################### Begin IGPO-specific code ###############################
                     # The ground-truth answers for batch i are stored in batch_dict['reward_model'][i]['ground_truth']['target']
-                    # This returns a list, but so far I have ony seen questions with a single version of the ground-truth answer
+                    # This returns a list with potentially multiple valid answers
+                    # TODO: Handle multiple valid answers per sample. For now, I arbitrarily take the first one
                     batch_size = len(batch_dict['reward_model'])
                     ground_truths = [batch_dict['reward_model'][i]['ground_truth']['target'] for i in range(batch_size)]
-                    assert all(len(gt)==1 for gt in ground_truths), "Got multiple valid ground-truth answers for some samples"
-                    ground_truths = [gt[0] for gt in ground_truths]  # Extract the single ground-truth answer per sample
+                    # if not all(len(gt)==1 for gt in ground_truths): # For checking instances with multiple valid answers
+                    #     breakpoint()
+                    ground_truths = [gt[0] for gt in ground_truths]  # Extract the first ground-truth answer per sample
 
                     # Note that the special tokens used here by IGPO are the same for verl-tool, and they are also using a Qwen model. 
                     # Thus, I use a similar string for the pseudo-response; however, I changed the formatting a bit to match
@@ -148,12 +384,21 @@ class RayPPOTrainerIGPO(RayPPOTrainer):
                         for resp_with_gt in pseudo_resps_with_gt
                     ]
                     pseudo_resps_with_gt_stacked = torch.cat(padded_resps, dim=0) # Shape: (B, max_len)
-                    
+                    # In certain cases, the last token of the ground-truth answer merges with the newline token that 
+                    # follows it (this may happen to the start token as well, but I have not observed it yet). We can tell 
+                    # if a merge happens by checking whether the newline token remains separate after tokenization. If there
+                    # is a merge, we adjust the end index so that the merged token is included in the ground-truth answer span.
                     for i, resp_with_gt in enumerate(pseudo_resps_with_gt):
-                        # The end idx will account for padding
-                        idx = [len_st, resp_with_gt.shape[1] - len_ed - 1]
-                        assert idx[1]-idx[0]+1 == len(self.tokenizer(ground_truths[i], return_tensors="pt")['input_ids'].tolist()[0]) # TODO: This is just a sanity check
-                        gt_end_indices.append(idx[1])
+                        len_gt_no_markers = len(self.tokenizer(ground_truths[i], return_tensors="pt")['input_ids'].tolist()[0])
+                        tokenized_gt_with_markers = self.tokenizer(f"\n{ground_truths[i]}\n", return_tensors="pt")['input_ids'].tolist()[0]
+                        newline_id = self.tokenizer('\n', return_tensors="pt")['input_ids'].tolist()[0][0]
+                        if tokenized_gt_with_markers[-1] != newline_id:
+                            true_len_ed = len_ed - 1
+                        else:
+                            true_len_ed = len_ed
+                            assert len_gt_no_markers == resp_with_gt.size(1) - len_st - len_ed, "Length mismatch even though no merges detected. Check if first ground-truth token was merged, or if something else is wrong."
+                        # The end index will account for padding
+                        gt_end_indices.append(resp_with_gt.shape[1] - true_len_ed - 1)
                     gt_end_indices = torch.tensor(gt_end_indices).repeat_interleave(self.config.actor_rollout_ref.rollout.n, dim=0)  # Shape: (B,)
                     ############################### End IGPO-specific code ###############################
 
@@ -171,11 +416,15 @@ class RayPPOTrainerIGPO(RayPPOTrainer):
                     # Split the generated outputs before each turn to compute the correct answer probabilities
                     # Just need to take gen_batch_output.batch['input_ids'] and split each row at the correct
                         # token IDs
+                    # Also note that the number of turns for each rollout is stored in gen_batch_output.non_tensor_batch['__num_turns__']
                     with marked_timer("gt_probs", timing_raw, color="blue"):
                         # The prompt begins with token 151644 and ends with token 198. 
                         # The response always begins with 151644, 77091, 198 (where 198 is newline)
                         turn_start_seq = torch.tensor([151644, 77091, 198]).to(gen_batch_output.batch['input_ids'].device)
-                        ### Truncate so that we can add the ground-truth answer at the end
+                        max_num_turns = gen_batch_output.non_tensor_batch['__num_turns__'].max().item()
+                        per_turn_gt_probs = -1*torch.ones((gen_batch_output.batch['input_ids'].shape[0], max_num_turns), device=gen_batch_output.batch['input_ids'].device)
+                        two_turn_sequences = (gen_batch_output.non_tensor_batch['__num_turns__'] >= 2)
+                        three_turn_sequences = (gen_batch_output.non_tensor_batch['__num_turns__'] >= 3)
                         # First remove any columns which only contain padding tokens (since the tensors are padded to max length)
                         x = gen_batch_output.batch['input_ids']
                         non_pad_mask = (x != pad_id).any(dim=0)  # (T,) - True for columns with at least one non-pad token
@@ -186,61 +435,145 @@ class RayPPOTrainerIGPO(RayPPOTrainer):
                         windows = x.unfold(1, L, 1)
                         # Compare each window to turn_start_seq
                         matches = (windows == turn_start_seq).all(dim=2)   # (B, T-L+1)
-                        # Find first occurrence index in each row
-                        found = matches.any(dim=1)
-                        # Index of the first match start (undefined if not found, so we fix that below)
-                        first_match_start = matches.float().argmax(dim=1)   # (B,)
-                        # Length we want to keep for each row:
-                        #   if found: start_index + L  (truncate right AFTER the pattern)
-                        #   if not found: keep full row (length = T)
-                        lengths = torch.where(
-                            found,
-                            first_match_start + L,
-                            torch.full_like(first_match_start, T)
-                        )   # shape: (B,)
-                        # We need a single max length for the output tensor
-                        max_len = int(lengths.max().item())
-                        # Build mask of "valid positions" for each row
-                        # mask[b, t] = True if t < lengths[b]
-                        idx = torch.arange(max_len, device=x.device)       # (max_len,)
-                        mask = idx.unsqueeze(0) < lengths.unsqueeze(1)     # (B, max_len)
-                        # Initialize output with padding
-                        out = torch.full((B, max_len), pad_id,
-                                        dtype=x.dtype, device=x.device)
-                        out[mask] = x[:, :max_len][mask]
+                        found = matches.any(dim=1) # Will exclude any sequences where the turn start pattern was not found
+                        match_locs = matches.nonzero(as_tuple=False)
+                        # Convert to list of locations for each row (could be more efficient)
+                        groups = {}
+                        for k in match_locs[:, 0].unique():
+                            groups[int(k)] = match_locs[match_locs[:, 0] == k, 1]
+                        # NOTE: I get at least 2 matches for every sequence even though some have only 1 turn
+                        # This is because the rollouts with 1 turn have empty user and assistant turns at the end which must be ignored
+                        # In these cases, the turn_start_seq will be immediately followed by padding tokens
+                        for turn_idx in range(max_num_turns):
+                            active_rows = (found & (gen_batch_output.non_tensor_batch['__num_turns__'] > turn_idx)).bool()
+                            active_x = x[active_rows]
+                            num_active = active_rows.sum().item()
+                            ### Truncate so that we can add the ground-truth answer at the end
+                            # For each active row, find the location of the (turn_idx+1)-th occurrence of turn_start_seq
+                            lengths = torch.tensor([groups[i][turn_idx].item() + L for i in range(B) if active_rows[i]])
+                            # We need a single max length for the output tensor
+                            max_len = lengths.max().item()
+                            # Build mask of "valid positions" for each row
+                            # mask[b, t] = True if t < lengths[b]
+                            idx = torch.arange(max_len, device=x.device)       # (max_len,)
+                            mask = idx.unsqueeze(0) < lengths.unsqueeze(1)     # (B, max_len)
+                            # Initialize output with padding
+                            out = torch.full((num_active, max_len), pad_id,
+                                            dtype=x.dtype, device=x.device)
+                            
+                            # This kind of copy is not working; out still has pad tokens only
+                            # out[active_rows][mask] = active_x[:, :max_len][mask]
+                            
+                            for i, row_idx in enumerate(active_rows.squeeze().nonzero(as_tuple=False)):
+                                # r = row_idx.item()
+                                # valid_len = lengths[(lengths != 0) & (active_rows)].tolist().index(lengths[r].item())
+                                out[i, max_len-lengths[i]:] = active_x[i, :lengths[i]]
 
-                        ### Add the ground-truth answers at the end of each sequence
-                        pseudo_resps_with_gt_stacked = pseudo_resps_with_gt_stacked.to(out.device)
-                        # TODO: when different prefixes are batched together, make sure there is no right-padding left
-                            # This doesn't seem to be an issue on the first turn
-                        pseudo_rollouts = torch.cat([out, pseudo_resps_with_gt_stacked], dim=1)
-                        ### Get the logprobs of the ground-truth answers
-                        # Naively form the attention mask and position_ids (position_ids for each sequence will not be affected by left-padding)
-                        attention_mask = (pseudo_rollouts != pad_id).long()
-                        position_ids = torch.cumsum(attention_mask, dim=1) - 1
-                        # Only the length of the response mask matters here; if the length is L, then only the
-                        # logprobs for the last L tokens are returned
-                        responses = torch.ones((pseudo_rollouts.shape[0], pseudo_resps_with_gt_stacked.shape[1]), dtype=torch.long)
-                        pseudo_rollout_tensordict = TensorDict(
-                            {
-                                "input_ids": pseudo_rollouts,
-                                "attention_mask": attention_mask,
-                                "position_ids": position_ids,
-                                "responses": responses,
-                            },
-                            batch_size=pseudo_rollouts.shape[0],
-                            device=pseudo_rollouts.device,
-                        )
-                        pseudo_rollout_DP = DataProto.from_tensordict(pseudo_rollout_tensordict, meta_info=gen_batch_output.meta_info)
-                        pseudo_log_probs = self.actor_rollout_wg.compute_log_prob(pseudo_rollout_DP).batch['old_log_probs']
-                        # TODO: Make this work for varying prefix and varying length of ground-truth answer
-                        # TODO: Do we get logprobs for padding tokens? If not, the end index should be adjusted (if we need to use it)
-                        # gt_log_probs = pseudo_log_probs[:, len_st:pseudo_log_probs.shape[1]-len_ed]
-                        gt_log_probs = pseudo_log_probs.clone()
-                        gt_log_probs[:, :len_st] = 0.0  # Zero out logprobs before the start of the ground-truth answer
-                        mask = torch.arange(gt_log_probs.shape[1]).unsqueeze(0) > gt_end_indices.unsqueeze(1)
-                        gt_log_probs = gt_log_probs.masked_fill(mask, 0.0)  # Zero out logprobs beyond the ground-truth answer
-                        gt_probs = torch.exp(gt_log_probs.sum(dim=1))  # Sum logprobs to get total prob for the ground-truth answer
+                            ### Add the ground-truth answers at the end of each sequence
+                            pseudo_resps_with_gt_active = pseudo_resps_with_gt_stacked[active_rows].to(out.device)
+                            pseudo_rollouts = torch.cat([out, pseudo_resps_with_gt_active], dim=1)
+                            
+                            ### Get the logprobs of the ground-truth answers
+                            # Naively form the attention mask and position_ids (position_ids for each sequence will not be affected by left-padding)
+                            attention_mask = (pseudo_rollouts != pad_id).long()
+                            position_ids = torch.cumsum(attention_mask, dim=1) - 1
+                            # Only the length of the response mask matters here; if the length is L, then only the
+                            # logprobs for the last L tokens are returned
+                            responses = torch.ones((pseudo_rollouts.shape[0], pseudo_resps_with_gt_active.shape[1]), dtype=torch.long)
+                            pseudo_rollout_tensordict = TensorDict(
+                                {
+                                    "input_ids": pseudo_rollouts,
+                                    "attention_mask": attention_mask,
+                                    "position_ids": position_ids,
+                                    "responses": responses,
+                                },
+                                batch_size=pseudo_rollouts.shape[0],
+                                device=pseudo_rollouts.device,
+                            )
+                            
+                            chunk_size = max(
+                                1,
+                                self.config.trainer.n_gpus_per_node * self.config.trainer.nnodes,
+                            )
+                            remainder = pseudo_rollout_tensordict["input_ids"].shape[0] % chunk_size
+                            pad_rows = chunk_size - remainder if remainder != 0 else 0
+
+                            if pad_rows:
+                                td_device = (
+                                    pseudo_rollout_tensordict.device
+                                    if pseudo_rollout_tensordict.device is not None
+                                    else pseudo_rollout_tensordict["input_ids"].device
+                                )
+                                pad_tensors = {
+                                    "input_ids": torch.full(
+                                        (pad_rows, pseudo_rollout_tensordict["input_ids"].shape[1]),
+                                        pad_id,
+                                        dtype=pseudo_rollout_tensordict["input_ids"].dtype,
+                                        device=td_device,
+                                    ),
+                                    "attention_mask": torch.ones(
+                                        (pad_rows, pseudo_rollout_tensordict["attention_mask"].shape[1]),
+                                        dtype=pseudo_rollout_tensordict["attention_mask"].dtype,
+                                        device=td_device,
+                                    ),
+                                    "position_ids": torch.zeros(
+                                        (pad_rows, pseudo_rollout_tensordict["position_ids"].shape[1]),
+                                        dtype=pseudo_rollout_tensordict["position_ids"].dtype,
+                                        device=td_device,
+                                    ),
+                                    "responses": torch.zeros(
+                                        (pad_rows, pseudo_rollout_tensordict["responses"].shape[1]),
+                                        dtype=pseudo_rollout_tensordict["responses"].dtype,
+                                        device=td_device,
+                                    ),
+                                }
+                                pad_tensordict = TensorDict(
+                                    pad_tensors,
+                                    batch_size=(pad_rows,),
+                                    device=td_device,
+                                )
+                                pseudo_rollout_tensordict = torch.cat(
+                                    [pseudo_rollout_tensordict, pad_tensordict],
+                                    dim=0,
+                                )
+
+                            pseudo_rollout_DP = DataProto.from_tensordict(
+                                pseudo_rollout_tensordict, meta_info=gen_batch_output.meta_info
+                            )
+
+                            pseudo_log_probs = self.actor_rollout_wg.compute_log_prob(pseudo_rollout_DP).batch[
+                                "old_log_probs"
+                            ]
+                            if pad_rows:
+                                pseudo_log_probs = pseudo_log_probs[:-pad_rows]
+                            gt_log_probs = pseudo_log_probs.clone()
+                            gt_log_probs[:, :len_st] = 0.0  # Zero out logprobs before the start of the ground-truth answer
+                            mask = torch.arange(gt_log_probs.shape[1]).unsqueeze(0) > gt_end_indices[active_rows].unsqueeze(1)
+                            gt_log_probs = gt_log_probs.masked_fill(mask, 0.0)  # Zero out logprobs beyond the ground-truth answer
+                            gt_probs = torch.exp(gt_log_probs.sum(dim=1))  # Sum logprobs to get total prob for the ground-truth answer
+                            per_turn_gt_probs[active_rows, turn_idx] = gt_probs
+                            # Log the mean of gt_probs; do not try to log per_turn_gt_probs since unused entries are -1
+                            logger.log(
+                                data={f"igpo/turn_{turn_idx+1}_gt_prob_mean": gt_probs.mean().detach().item()},
+                                step=self.global_steps,
+                            )
+                        # torch.diff computes input[i + 1] - input[i]
+                        info_gain = torch.diff(per_turn_gt_probs, dim=1)  # Shape: (B, max_num_turns-1)
+                        info_gain_mask = (per_turn_gt_probs[:, 1:] >= 0)  # Mask indicating valid info gain entries
+                        # Here we average over all sequences with at least 2 or 3 turns respectively
+                        if two_turn_sequences.any():
+                            logger.log(
+                                data={f"igpo/turn_1_info_gain": info_gain[two_turn_sequences,0].mean().detach().item()},
+                                step=self.global_steps,
+                            )
+                        if three_turn_sequences.any():
+                            logger.log(
+                                data={f"igpo/turn_2_info_gain": info_gain[three_turn_sequences,1].mean().detach().item()},
+                                step=self.global_steps,
+                            )
+                        gen_batch_output.batch["info_gain"] = info_gain
+                        gen_batch_output.batch["info_gain_mask"] = info_gain_mask
+
                     ############################### End IGPO-specific code ###############################
 
                     if self.config.algorithm.adv_estimator == AdvantageEstimator.REMAX:
@@ -364,7 +697,7 @@ class RayPPOTrainerIGPO(RayPPOTrainer):
                             "norm_adv_by_std_in_grpo", True
                         )  # GRPO adv normalization factor
 
-                        batch = compute_advantage(
+                        batch = compute_advantage_igpo(
                             batch,
                             adv_estimator=self.config.algorithm.adv_estimator,
                             gamma=self.config.algorithm.gamma,
