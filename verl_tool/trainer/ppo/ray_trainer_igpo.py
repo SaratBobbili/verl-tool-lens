@@ -88,6 +88,13 @@ def insert_at_first_false(A, B, mask):
     out[rows, first_false[rows]] = A[rows, 0]
     return out
 
+def get_group_indices(N: int, G: int, x: int):
+    """ N is total batch size, G is group size, x is index in [0, N) """
+    assert N % G == 0
+    assert 0 <= x < N
+
+    group_start = (x // G) * G
+    return list(range(group_start, group_start + G))
 
 def compute_igpo_outcome_advantage(
     token_level_rewards: torch.Tensor,
@@ -359,21 +366,46 @@ class RayPPOTrainerIGPO(RayPPOTrainer):
                 
                 with marked_timer("step", timing_raw):
                     ############################### Begin IGPO-specific code ###############################
+                    batch_size = len(batch_dict['reward_model'])
+                    # Depending on the task, the pseudo-response with ground-truth answer can have a different format. For
+                    # example, for math problems, the ground-truth answer needs to be put inside \boxed{...}. A config option
+                    # is used to indicate what type of pseudo-response to use. The default is the one used for search tasks
+                    # which matches what the IGPO paper uses.
+                    task_type = self.config.algorithm.get("task_type", "search")
+                    if any([batch_dict['reward_model'][i]['style'] != 'rule' for i in range(batch_size)]):
+                        print("GOT STYLE OTHER THAN \'RULE\'")
+                        raise ValueError("Unsupported style found in batch_dict['reward_model']")
                     # The ground-truth answers for batch i are stored in batch_dict['reward_model'][i]['ground_truth']['target']
                     # This returns a list with potentially multiple valid answers
                     # TODO: Handle multiple valid answers per sample. For now, I arbitrarily take the first one
-                    batch_size = len(batch_dict['reward_model'])
-                    ground_truths = [batch_dict['reward_model'][i]['ground_truth']['target'] for i in range(batch_size)]
-                    # if not all(len(gt)==1 for gt in ground_truths): # For checking instances with multiple valid answers
-                    #     breakpoint()
-                    ground_truths = [gt[0] for gt in ground_truths]  # Extract the first ground-truth answer per sample
-
-                    # Note that the special tokens used here by IGPO are the same for verl-tool, and they are also using a Qwen model. 
-                    # Thus, I use a similar string for the pseudo-response; however, I changed the formatting a bit to match
-                    # What the Qwen-2.5-1.5B-Instruct model outputs normally
-                    pseudo_resps_with_gt = [self.tokenizer(f"<think> Now there's enough information to answer.</think>\n<answer>\n{ground_truth}\n</answer><|im_end|>", return_tensors="pt")['input_ids'] for ground_truth in ground_truths]
-                    len_st = len(self.tokenizer("<think> Now there's enough information to answer.</think>\n<answer>\n", return_tensors="pt")['input_ids'].tolist()[0])
-                    len_ed = len(self.tokenizer("\n</answer><|im_end|>", return_tensors="pt")['input_ids'].tolist()[0])
+                    # How to extract the ground-truth answers also depends on the task type
+                    if task_type == "math":
+                        # In this case, there is only ever one ground-truth answer per sample
+                        ground_truths = [batch_dict['reward_model'][i]['ground_truth'] for i in range(batch_size)]
+                    elif task_type == "search":
+                        ground_truths = [batch_dict['reward_model'][i]['ground_truth']['target'] for i in range(batch_size)]
+                        # if not all(len(gt)==1 for gt in ground_truths): # For checking instances with multiple valid answers
+                        #     breakpoint()
+                        ground_truths = [gt[0] for gt in ground_truths]  # Extract the first ground-truth answer per sample
+                    else:
+                        raise ValueError(f"Unsupported task_type {task_type} for IGPO trainer.")
+                    # For search tasks, I use a string for the pseudo-response which is similar to what the IGPO paper uses;
+                    # however, I changed the formatting a bit to match what the Qwen-2.5-1.5B-Instruct model outputs normally
+                    if task_type == "search":
+                        pseudo_response_template = "<think> Now there's enough information to answer.</think>\n<answer>\n{ground_truth}\n</answer><|im_end|>"
+                        len_st = len(self.tokenizer("<think> Now there's enough information to answer.</think>\n<answer>\n", return_tensors="pt")['input_ids'].tolist()[0])
+                        len_ed = len(self.tokenizer("\n</answer><|im_end|>", return_tensors="pt")['input_ids'].tolist()[0])
+                        # The characters which will appear before and after the ground-truth answer if no merges occur
+                        surrounding_chars = ['\n', '\n']
+                    elif task_type == "math":
+                        pseudo_response_template = "The answer is \\boxed{{{ground_truth}}}<|im_end|>"
+                        len_st = len(self.tokenizer("The answer is \\boxed{", return_tensors="pt")['input_ids'].tolist()[0])
+                        len_ed = len(self.tokenizer("}<|im_end|>", return_tensors="pt")['input_ids'].tolist()[0])
+                        # For Qwen, '{' has ID 90 and '}' has ID 92
+                        surrounding_chars = ['{', '}']
+                    expected_start_token_id = self.tokenizer(surrounding_chars[0], return_tensors="pt")['input_ids'].tolist()[0][0]
+                    expected_end_token_id = self.tokenizer(surrounding_chars[1], return_tensors="pt")['input_ids'].tolist()[0][0]
+                    pseudo_resps_with_gt = [self.tokenizer(pseudo_response_template.format(ground_truth=ground_truth), return_tensors="pt")['input_ids'] for ground_truth in ground_truths]
                     gt_end_indices = [] # Stores the index corresponding to the last ground-truth token for each sample in the batch
 
                     # Pad pseudo_resps_with_gt to max_len and stack; also expand to match group size
@@ -384,19 +416,24 @@ class RayPPOTrainerIGPO(RayPPOTrainer):
                         for resp_with_gt in pseudo_resps_with_gt
                     ]
                     pseudo_resps_with_gt_stacked = torch.cat(padded_resps, dim=0) # Shape: (B, max_len)
+
                     # In certain cases, the last token of the ground-truth answer merges with the newline token that 
                     # follows it (this may happen to the start token as well, but I have not observed it yet). We can tell 
                     # if a merge happens by checking whether the newline token remains separate after tokenization. If there
                     # is a merge, we adjust the end index so that the merged token is included in the ground-truth answer span.
                     for i, resp_with_gt in enumerate(pseudo_resps_with_gt):
                         len_gt_no_markers = len(self.tokenizer(ground_truths[i], return_tensors="pt")['input_ids'].tolist()[0])
-                        tokenized_gt_with_markers = self.tokenizer(f"\n{ground_truths[i]}\n", return_tensors="pt")['input_ids'].tolist()[0]
-                        newline_id = self.tokenizer('\n', return_tensors="pt")['input_ids'].tolist()[0][0]
-                        if tokenized_gt_with_markers[-1] != newline_id:
-                            true_len_ed = len_ed - 1
-                        else:
-                            true_len_ed = len_ed
-                            assert len_gt_no_markers == resp_with_gt.size(1) - len_st - len_ed, "Length mismatch even though no merges detected. Check if first ground-truth token was merged, or if something else is wrong."
+                        tokenized_gt_with_markers = self.tokenizer(f"{surrounding_chars[0]}{ground_truths[i]}{surrounding_chars[1]}", return_tensors="pt")['input_ids'].tolist()[0]
+                        merge_detected = False
+                        true_len_ed = len_ed
+                        if tokenized_gt_with_markers[0] != expected_start_token_id:
+                            true_len_ed -= 1
+                            merge_detected = True
+                        if tokenized_gt_with_markers[-1] != expected_end_token_id:
+                            true_len_ed -= 1
+                            merge_detected = True
+                        if not merge_detected:
+                            assert len_gt_no_markers == resp_with_gt.size(1) - len_st - len_ed, "Length mismatch even though no merges detected."
                         # The end index will account for padding
                         gt_end_indices.append(resp_with_gt.shape[1] - true_len_ed - 1)
                     gt_end_indices = torch.tensor(gt_end_indices).repeat_interleave(self.config.actor_rollout_ref.rollout.n, dim=0)  # Shape: (B,)
@@ -418,8 +455,6 @@ class RayPPOTrainerIGPO(RayPPOTrainer):
                         # token IDs
                     # Also note that the number of turns for each rollout is stored in gen_batch_output.non_tensor_batch['__num_turns__']
                     with marked_timer("gt_probs", timing_raw, color="blue"):
-                        # The prompt begins with token 151644 and ends with token 198. 
-                        # The response always begins with 151644, 77091, 198 (where 198 is newline)
                         turn_start_seq = torch.tensor([151644, 77091, 198]).to(gen_batch_output.batch['input_ids'].device)
                         max_num_turns = gen_batch_output.non_tensor_batch['__num_turns__'].max().item()
                         per_turn_gt_probs = -1*torch.ones((gen_batch_output.batch['input_ids'].shape[0], max_num_turns), device=gen_batch_output.batch['input_ids'].device)
@@ -446,6 +481,19 @@ class RayPPOTrainerIGPO(RayPPOTrainer):
                         # In these cases, the turn_start_seq will be immediately followed by padding tokens
                         for turn_idx in range(max_num_turns):
                             active_rows = (found & (gen_batch_output.non_tensor_batch['__num_turns__'] > turn_idx)).bool()
+                            # NOTE: I have found one problem in the MATH dataset where something goes wrong and the 
+                            # 'assistant' token never gets added before the first turn, so turn_start_seq shows up
+                            # fewer times than the number of turns given by gen_batch_output.non_tensor_batch['__num_turns__'].
+                            # In such cases, I will not try to apply IGPO, so all elements of groups affected by this 
+                            # will be removed from active_rows here
+                            problem_indices = torch.ones(B, dtype=torch.bool, device=x.device).scatter_(0, match_locs[:, 0], False).nonzero(as_tuple=True)[0].tolist()
+                            to_remove = []
+                            for idx in problem_indices:
+                                if idx not in to_remove:
+                                    to_remove.extend(get_group_indices(B, self.config.actor_rollout_ref.rollout.n, idx))
+                            to_remove = torch.tensor(to_remove, device=x.device)
+                            if to_remove.numel() > 0:
+                                active_rows[to_remove] = False
                             active_x = x[active_rows]
                             num_active = active_rows.sum().item()
                             ### Truncate so that we can add the ground-truth answer at the end
@@ -460,9 +508,6 @@ class RayPPOTrainerIGPO(RayPPOTrainer):
                             # Initialize output with padding
                             out = torch.full((num_active, max_len), pad_id,
                                             dtype=x.dtype, device=x.device)
-                            
-                            # This kind of copy is not working; out still has pad tokens only
-                            # out[active_rows][mask] = active_x[:, :max_len][mask]
                             
                             for i, row_idx in enumerate(active_rows.squeeze().nonzero(as_tuple=False)):
                                 # r = row_idx.item()
