@@ -96,6 +96,53 @@ def get_group_indices(N: int, G: int, x: int):
     group_start = (x // G) * G
     return list(range(group_start, group_start + G))
 
+# Use this to match how IGPO is described in their paper
+def normalize_group(group_indx, scores_grouped, info_gain_rewards_grouped, info_gain_mask_grouped, epsilon, norm_adv_by_std_in_grpo):
+    # Put all the valid rewards for a group into a single list for computing statistics
+    # info_gain_mask indicates which elements are actual turn scores and which should be ignored 
+    # (due to fewer actual turns). When the mask is applied, the remaining elements are also flattened
+    all_group_scores = scores_grouped[group_indx].tolist() + info_gain_rewards_grouped[group_indx][info_gain_mask_grouped[group_indx].bool()].tolist()
+    # Compute mean and std for scores
+    mean_score = torch.mean(torch.tensor(all_group_scores))
+    std_score = torch.std(torch.tensor(all_group_scores))
+    # Temporarily concatenate the final scores with the info gain rewards for normalization
+    rollout_scores = torch.cat([scores_grouped[group_indx].unsqueeze(-1), info_gain_rewards_grouped[group_indx]], dim=1)
+
+    # Normalize scores
+    if norm_adv_by_std_in_grpo:
+        normalized_scores = (rollout_scores - mean_score) / (std_score + epsilon)
+    else:
+        normalized_scores = rollout_scores - mean_score
+    return normalized_scores
+
+# This version normalizes the outcome rewards and info gain rewards separately
+def normalize_group_separately(group_indx, scores_grouped, info_gain_rewards_grouped, info_gain_mask_grouped, epsilon, norm_adv_by_std_in_grpo):
+    # Compute mean and std for scores
+    mean_score = torch.mean(scores_grouped[group_indx])
+    std_score = torch.std(scores_grouped[group_indx])
+    # Normalize scores
+    if norm_adv_by_std_in_grpo:
+        normalized_scores = (scores_grouped[group_indx].unsqueeze(-1) - mean_score) / (std_score + epsilon)
+    else:
+        normalized_scores = scores_grouped[group_indx].unsqueeze(-1) - mean_score
+
+    # Compute mean and std for info gain rewards
+    valid_info_gains = info_gain_rewards_grouped[group_indx][info_gain_mask_grouped[group_indx].bool()]
+    if len(valid_info_gains) > 0:
+        mean_info_gain = torch.mean(valid_info_gains)
+        std_info_gain = torch.std(valid_info_gains)
+        # Normalize info gain rewards
+        if norm_adv_by_std_in_grpo:
+            normalized_info_gains = (info_gain_rewards_grouped[group_indx] - mean_info_gain) / (std_info_gain + epsilon)
+        else:
+            normalized_info_gains = info_gain_rewards_grouped[group_indx] - mean_info_gain
+    else:
+        # If there are no valid info gains, just set normalized info gains to zero
+        normalized_info_gains = torch.zeros_like(info_gain_rewards_grouped[group_indx])
+    # Concatenate normalized scores and normalized info gains
+    normalized_scores = torch.cat([normalized_scores, normalized_info_gains], dim=1)
+    return normalized_scores
+
 def compute_igpo_outcome_advantage(
     token_level_rewards: torch.Tensor,
     info_gain_rewards: torch.Tensor,
@@ -153,21 +200,10 @@ def compute_igpo_outcome_advantage(
     group_normalized_scores = []
     group_normalized_info_gains = []
     for i in range(len(groups)):
-        # Put all the valid rewards for a group into a single list for computing statistics
-        # info_gain_mask indicates which elements are actual turn scores and which should be ignored 
-        # (due to fewer actual turns). When the mask is applied, the remaining elements are also flattened
-        all_group_scores = scores_grouped[i].tolist() + info_gain_rewards_grouped[i][info_gain_mask_grouped[i].bool()].tolist()
-        # Compute mean and std for scores
-        mean_score = torch.mean(torch.tensor(all_group_scores))
-        std_score = torch.std(torch.tensor(all_group_scores))
-        # Temporarily concatenate the final scores with the info gain rewards for normalization
-        rollout_scores = torch.cat([scores_grouped[i].unsqueeze(-1), info_gain_rewards_grouped[i]], dim=1)
-
-        # Normalize scores
-        if norm_adv_by_std_in_grpo:
-            normalized_scores = (rollout_scores - mean_score) / (std_score + epsilon)
+        if config.get("normalize_info_gain_and_outcome_separately", False):
+            normalized_scores = normalize_group_separately(i, scores_grouped, info_gain_rewards_grouped, info_gain_mask_grouped, epsilon, norm_adv_by_std_in_grpo)
         else:
-            normalized_scores = rollout_scores - mean_score
+            normalized_scores = normalize_group(i, scores_grouped, info_gain_rewards_grouped, info_gain_mask_grouped, epsilon, norm_adv_by_std_in_grpo)
         group_normalized_scores.append(normalized_scores[:, 0].unsqueeze(-1))
         # Here we also zero out the elements of info_gain_rewards where the mask is False so that they do not
         # interfere with later calculations
@@ -262,6 +298,7 @@ def compute_advantage_igpo(
         index=data.non_tensor_batch["uid"],
         norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
         gamma=gamma,
+        config=config,
     )
     data.batch["advantages"] = advantages
     data.batch["returns"] = returns
