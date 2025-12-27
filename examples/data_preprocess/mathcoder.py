@@ -20,7 +20,7 @@ import os
 import fire
 import numpy as np
 from verl.utils.hdfs_io import copy, makedirs
-from verl.utils.reward_score.math import remove_boxed, last_boxed_only_string
+from verl.utils.reward_score.math_reward import remove_boxed, last_boxed_only_string
 
 
 
