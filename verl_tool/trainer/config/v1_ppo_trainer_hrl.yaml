@@ -1,0 +1,44 @@
+# Minimal HRL overlay: reuse base ppo_trainer defaults and add hrl block.
+
+defaults:
+  - ppo_trainer
+  - _self_
+
+# Hierarchical rollout defaults; selector mirrors actor unless overridden.
+hrl:
+
+  # Max selector/expert alternations per sample
+  max_turns: 6
+
+  # Number of expert groups; default single expert (actor rollout)
+  num_experts: 1
+
+  # Total token budget across all responses
+  max_total_tokens: 3072
+
+  # Stop tokens for selector model (empty means use model eos)
+  stop_tokens: []
+
+  # Per-turn sampling for selector
+  selector_sampling:
+    temperature: 1.0
+    top_p: 1.0
+
+  selector:
+    model:
+      path: ${actor_rollout_ref.model.path}
+      trust_remote_code: ${actor_rollout_ref.model.trust_remote_code}
+      enable_gradient_checkpointing: ${actor_rollout_ref.model.enable_gradient_checkpointing}
+      use_remove_padding: ${actor_rollout_ref.model.use_remove_padding}
+
+    rollout:
+      name: vllm
+      tensor_model_parallel_size: 1
+      data_parallel_size: 1
+      pipeline_model_parallel_size: 1
+      max_num_seqs: 128
+      temperature: 1.0
+      top_p: 1.0
+      top_k: -1
+      n: 1
+
