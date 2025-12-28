@@ -561,7 +561,8 @@ class RayPPOTrainerIGPO(RayPPOTrainer):
                             position_ids = torch.cumsum(attention_mask, dim=1) - 1
                             # Only the length of the response mask matters here; if the length is L, then only the
                             # logprobs for the last L tokens are returned
-                            responses = torch.ones((pseudo_rollouts.shape[0], pseudo_resps_with_gt_active.shape[1]), dtype=torch.long)
+                            # responses = torch.ones((pseudo_rollouts.shape[0], pseudo_resps_with_gt_active.shape[1]), dtype=torch.long)
+                            responses = pseudo_resps_with_gt_active
                             pseudo_rollout_tensordict = TensorDict(
                                 {
                                     "input_ids": pseudo_rollouts,
