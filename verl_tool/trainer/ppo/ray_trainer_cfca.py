@@ -137,6 +137,67 @@ class RayPPOTrainerCFCA(RayPPOTrainer):
 
                         timing_raw.update(gen_batch_output.meta_info["timing"])
                         gen_batch_output.meta_info.pop("timing", None)
+                    
+                    with marked_timer("masked_fp", timing_raw, color="magenta"):
+                        # For testing, only mask out the first turn. To maintain a consistent batch size,
+                        # we still involve rollouts without tool calls in the computation, but we cannot
+                        # get useful information from those
+                        active_rows = (gen_batch_output.non_tensor_batch['__num_turns__'] > 1)
+                        response_mask = gen_batch_output.batch['response_mask']
+                        mask_change_locs = response_mask.diff(dim=1)
+                        # Mark each change between assistant responses and environment context, then
+                        # assign ids to the segments to determine which tokens will be masked at each
+                        # iteration
+                        change = torch.cat([
+                                # first element always starts a segment
+                                torch.tensor([True]*mask_change_locs.shape[0], device=response_mask.device).unsqueeze(-1),  
+                                mask_change_locs != 0,
+                            ], 
+                            dim=1)
+                        # Every segment with an even ID corresponds to a response segment.
+                        segment_ids = change.cumsum(dim=1) - 1  # Shape: (bs, response_length)
+                        
+                        if active_rows.any():
+                            # Create an attention mask where the segments with IDs 0 and 1 are masked out for any
+                            # row in active_rows. For the other rows, we keep the original attention mask.
+                            orig_attn_mask = gen_batch_output.batch['attention_mask']
+                            new_attn_mask = orig_attn_mask.clone()
+                            # The attention mask includes the prompt (and any left padding), so we need to pad 
+                            # segment_ids accordingly
+                            pad_size = orig_attn_mask.shape[1] - segment_ids.shape[1]
+                            if pad_size > 0:
+                                segment_ids = torch.cat([
+                                    -1*torch.ones((segment_ids.shape[0], pad_size), device=segment_ids.device),
+                                    segment_ids
+                                ], dim=1)
+                            # We also set segment_ids to -1 for rows that are not active, so that we don't mask anything
+                            segment_ids[~active_rows] = -1
+                            new_attn_mask[(segment_ids == 0) | (segment_ids == 1)] = 0
+                            # Compute position ids based on the new attention mask
+                            new_position_ids = torch.cumsum(new_attn_mask, dim=1) - 1
+                            # Get the sequence of tokens for which we want to compute log probs. This is simply
+                            # the tokens which follow the masked out segments.
+                            # For now, we will include all tokens and extract the relevant log probs later
+                            new_responses = gen_batch_output.batch['responses'].clone()
+                            # Create a new DataProto with the modified attention mask, position ids, and response mask
+                            masked_tensordict = TensorDict(
+                                    {
+                                        "input_ids": gen_batch_output.batch["input_ids"],
+                                        "attention_mask": new_attn_mask,
+                                        "position_ids": new_position_ids,
+                                        "responses": new_responses,
+                                    },
+                                    batch_size=new_attn_mask.shape[0],
+                                    device=gen_batch_output.batch.device,
+                                )
+                            gen_batch_output_masked = DataProto(batch=masked_tensordict, non_tensor_batch=gen_batch_output.non_tensor_batch)
+                            log_probs = self.actor_rollout_wg.compute_log_prob(gen_batch_output_masked).batch['old_log_probs']
+                            # log_probs covers the same set of tokens as response_mask. For any segment with an ID greater
+                            # than 1 which is not use for padding, we want to sum the log probs
+                            breakpoint()
+                        else:
+                            log_probs = None
+
 
                     if self.config.algorithm.adv_estimator == AdvantageEstimator.REMAX:
                         if self.reward_fn is None:
