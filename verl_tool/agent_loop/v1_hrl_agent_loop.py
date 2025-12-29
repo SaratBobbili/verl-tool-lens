@@ -24,6 +24,7 @@ from verl_tool.agent_loop.agent_loop import (
     AgentLoopMetrics,
     AgentLoopOutput,
     AsyncLLMServerManager,
+    RewardManagerWorker,
     _DummyConfig,
     _InternalAgentLoopOutput,
     _agent_loop_registry,
@@ -31,6 +32,7 @@ from verl_tool.agent_loop.agent_loop import (
     register,
 )
 from verl_tool.agent_loop.agent_loop import rollout_trace_attr
+from verl.utils.rollout_trace import RolloutTraceConfig
 from verl.utils import hf_tokenizer, hf_processor
 from verl_tool.agent_loop.v1_hrl_token_bridge import TokenBridge
 from verl_tool.agent_loop.v1_hrl_data_controller import HRLDataSharingController
@@ -186,8 +188,11 @@ class HierarchicalAgentLoop(AgentLoopBase):
 
 
 @ray.remote(num_cpus=1)
-class HRLAgentLoopWorker(AgentLoopWorker):
+class HRLAgentLoopWorker:
     """Agent loop worker that carries selector and expert servers."""
+
+    # Reuse the standard postprocess logic to avoid duplicating batching code.
+    _postprocess = AgentLoopWorker._postprocess
 
     def __init__(
         self,
@@ -200,7 +205,45 @@ class HRLAgentLoopWorker(AgentLoopWorker):
         self.selector_server_handles = selector_server_handles
         # Flatten all expert handles for base init (uses first group); we keep groups separately
         flat_expert_handles = [h for group in expert_handle_groups for h in group]
-        super().__init__(config, flat_expert_handles, rm_executor)
+
+        # Base async agent-loop setup (mirrors AgentLoopWorker.__init__).
+        self.config = config
+        self.rm_executor = rm_executor
+        self.server_manager = AsyncLLMServerManager(config, flat_expert_handles)
+
+        model_path = config.actor_rollout_ref.model.path
+        self.model_name = "/".join(model_path.split("/")[-2:])
+        local_path = copy_to_local(config.actor_rollout_ref.model.path)
+        self.tokenizer = hf_tokenizer(local_path, trust_remote_code=True)
+        self.processor = hf_processor(local_path, trust_remote_code=True)
+
+        agent_loop_config_path = config.actor_rollout_ref.rollout.agent.agent_loop_config_path
+        if agent_loop_config_path:
+            agent_loop_configs = OmegaConf.load(agent_loop_config_path)
+            for agent_loop_config in agent_loop_configs:
+                _agent_loop_registry[agent_loop_config.name] = agent_loop_config
+        if self.config.actor_rollout_ref.model.get("custom_chat_template", None) is not None:
+            if self.processor is not None:
+                self.processor.chat_template = self.config.actor_rollout_ref.model.custom_chat_template
+            self.tokenizer.chat_template = self.config.actor_rollout_ref.model.custom_chat_template
+
+        self.reward_manager_worker = RewardManagerWorker.options(
+            scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                node_id=ray.get_runtime_context().get_node_id(),
+                soft=False,
+            ),
+        ).remote(self.config, local_path, self.rm_executor)
+
+        trace_config = self.config.actor_rollout_ref.rollout.get("trace", {})
+        RolloutTraceConfig.init(
+            self.config.trainer.project_name,
+            self.config.trainer.experiment_name,
+            trace_config.get("backend"),
+            trace_config.get("token2text", False),
+        )
+
+        run_time_context = ray.get_runtime_context()
+        self.name = run_time_context.get_actor_name() or "unnamed"
 
         selector_path = copy_to_local(config.hrl.selector.model.path)
         self.selector_tokenizer = hf_tokenizer(selector_path, trust_remote_code=True)
@@ -211,6 +254,67 @@ class HRLAgentLoopWorker(AgentLoopWorker):
             AsyncLLMServerManager(config.actor_rollout_ref.rollout, handles) for handles in expert_handle_groups
         ]
         self.data_controller = data_controller
+
+        # Optional per-worker concurrency control (mirror base worker semantics).
+        self.max_concurrent_trajectories = self.config.actor_rollout_ref.agent.get("max_concurrent_trajectories", None)
+
+    async def generate_sequences(self, batch: DataProto) -> DataProto:
+        """Generate sequences from HRL agent loop."""
+        config = self.config.actor_rollout_ref.rollout
+        sampling_params = dict(
+            temperature=config.temperature,
+            top_p=config.top_p,
+            repetition_penalty=1.0,
+            logprobs=config.calculate_log_probs,
+        )
+
+        if batch.meta_info.get("validate", False):
+            sampling_params["top_p"] = config.val_kwargs.top_p
+            sampling_params["temperature"] = config.val_kwargs.temperature
+
+        if "agent_name" not in batch.non_tensor_batch:
+            default_agent_loop = config.agent.default_agent_loop
+            batch.non_tensor_batch["agent_name"] = np.array([default_agent_loop] * len(batch), dtype=object)
+
+        if "index" in batch.non_tensor_batch:
+            index = batch.non_tensor_batch["index"]
+        else:
+            index = np.arange(len(batch))
+
+        trajectory_info = await get_trajectory_info(
+            batch.meta_info.get("global_steps", -1), index.tolist(), batch.meta_info.get("validate", False)
+        )
+
+        # Optional semaphore to bound per-worker concurrency.
+        if self.max_concurrent_trajectories is not None:
+            print(f"HRL Agent Worker {self.name} using semaphore with max concurrency {self.max_concurrent_trajectories}")
+            semaphore = asyncio.Semaphore(self.max_concurrent_trajectories)
+
+            def semaphore_wrapper(func):
+                async def wrapper(*args, **kwargs):
+                    async with semaphore:
+                        return await func(*args, **kwargs)
+
+                return wrapper
+
+        else:
+
+            def semaphore_wrapper(func):
+                async def wrapper(*args, **kwargs):
+                    return await func(*args, **kwargs)
+
+                return wrapper
+
+        tasks = []
+        for i in range(len(batch)):
+            kwargs = {k: v[i] for k, v in batch.non_tensor_batch.items()}
+            tasks.append(asyncio.create_task(semaphore_wrapper(self._run_agent_loop)(sampling_params, trajectory_info[i], **kwargs)))
+
+        print(f"HRL Agent Worker {self.name} launching {len(tasks)} tasks...")
+        outputs = await tqdm.gather(*tasks, desc=f"HRL Agent Worker {self.name} Looping", total=len(tasks))
+        print(f"HRL Agent Worker {self.name} finished {len(tasks)} tasks.")
+        output = self._postprocess(outputs)
+        return output
 
     async def _run_agent_loop(
         self,

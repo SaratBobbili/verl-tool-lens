@@ -26,7 +26,8 @@ from verl_tool.trainer.main_ppo import TaskRunner as BaseTaskRunner
 from omegaconf import open_dict, OmegaConf
 
 
-@hydra.main(config_path="config", config_name="ppo_trainer", version_base=None)
+# Load the HRL overlay config so hrl.* overrides are part of the schema.
+@hydra.main(config_path="config", config_name="v1_ppo_trainer_hrl", version_base=None)
 def main(config):
     """Main entry point for PPO training with Hydra configuration management.
 
@@ -111,9 +112,13 @@ class HRLTaskRunner:
         with open_dict(config):
             config.actor_rollout_ref.rollout.agent = config.actor_rollout_ref.rollout.get("agent", {})
             config.actor_rollout_ref.rollout.agent.default_agent_loop = "v1_hrl_selector_expert"
-            config.actor_rollout_ref.rollout.agent.agent_loop_manager_class = (
-                "verl_tool.agent_loop.v1_hrl_agent_loop.HRLAgentLoopManager"
-            )
+
+        # Ensure Ray uses the HRL-aware agent loop manager so selector and expert rollouts
+        # are orchestrated during async rollout.
+        import verl.experimental.agent_loop as exp_agent_loop
+        from verl_tool.agent_loop.v1_hrl_agent_loop import HRLAgentLoopManager
+
+        exp_agent_loop.AgentLoopManager = HRLAgentLoopManager
 
         # Delegate to the base TaskRunner (PPO-level) with HRL agent loop enabled.
         base_runner = BaseTaskRunner.options(name=f"ppo_task_runner_{runner_rank}").remote()
