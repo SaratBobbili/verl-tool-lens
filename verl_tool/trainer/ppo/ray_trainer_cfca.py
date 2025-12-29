@@ -138,6 +138,7 @@ class RayPPOTrainerCFCA(RayPPOTrainer):
                         timing_raw.update(gen_batch_output.meta_info["timing"])
                         gen_batch_output.meta_info.pop("timing", None)
                     
+                    """ ####################### START OF CFCA-SPECIFIC CODE BLOCK ####################### """
                     with marked_timer("masked_fp", timing_raw, color="magenta"):
                         # For testing, only mask out the first turn. To maintain a consistent batch size,
                         # we still involve rollouts without tool calls in the computation, but we cannot
@@ -193,11 +194,22 @@ class RayPPOTrainerCFCA(RayPPOTrainer):
                             gen_batch_output_masked = DataProto(batch=masked_tensordict, non_tensor_batch=gen_batch_output.non_tensor_batch)
                             log_probs = self.actor_rollout_wg.compute_log_prob(gen_batch_output_masked).batch['old_log_probs']
                             # log_probs covers the same set of tokens as response_mask. For any segment with an ID greater
-                            # than 1 which is not use for padding, we want to sum the log probs
-                            breakpoint()
+                            # than 1 which is not used for padding, we want to sum the log probs
+                            response_start_point = gen_batch_output.batch["input_ids"].shape[1] - response_mask.shape[1]
+                            response_segment_ids = segment_ids[:, response_start_point:]
+                            turn_2_log_probs = log_probs.clone()
+                            turn_2_log_probs[~active_rows] = 0.0
+                            # Note that segment_ids spans the full length of input_ids, so we need to select only
+                            # the elements corresponding to the response tokens when forming the mask
+                            turn_2_log_probs[segment_ids[:, response_start_point:] != 2] = 0.0
+                            turn_2_log_prob_sums = turn_2_log_probs.sum(dim=1)  # Shape: (bs,)
+                            input_ids = gen_batch_output.batch['input_ids']
+                            # pad_token_id = 151643
+                            # input_ids[3, input_ids[3] != 151643]
+                            # segment_ids[3, input_ids[3] != 151643]
                         else:
                             log_probs = None
-
+                    """ ####################### END OF CFCA-SPECIFIC CODE BLOCK ####################### """
 
                     if self.config.algorithm.adv_estimator == AdvantageEstimator.REMAX:
                         if self.reward_fn is None:
@@ -259,6 +271,13 @@ class RayPPOTrainerCFCA(RayPPOTrainer):
                     # recompute old_log_probs
                     with marked_timer("old_log_prob", timing_raw, color="blue"):
                         old_log_prob = self.actor_rollout_wg.compute_log_prob(batch)
+                        old_log_prob_tensor = old_log_prob.batch["old_log_probs"]
+                        # TODO: If the order of data in batch gets changed by _balance_batch, we need to 
+                        # account for it here
+                        # For second turn log probs:
+                        # old_log_prob_tensor[0, response_segment_ids[0] == 2].sum()
+                        breakpoint()
+                        
                         entropys = old_log_prob.batch["entropys"]
                         response_masks = batch.batch["response_mask"]
                         loss_agg_mode = self.config.actor_rollout_ref.actor.loss_agg_mode
