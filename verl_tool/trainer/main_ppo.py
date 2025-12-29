@@ -363,6 +363,7 @@ def create_rl_dataset(data_paths, data_config, tokenizer, processor, is_train=Tr
         tokenizer=tokenizer,
         processor=processor,
         config=data_config,
+        max_samples=10 #using this for testing our code, validation and training.
     )
 
     return dataset

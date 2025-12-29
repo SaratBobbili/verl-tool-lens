@@ -1,5 +1,5 @@
 set -x
-
+export VERL_LOGGING_LEVEL=CRITICAL
 # base dataset/model knobs
 dataset_name=deepmath_torl
 train_data=$(pwd)/data/${dataset_name}/train.parquet
@@ -7,14 +7,14 @@ val_data=[$(pwd)/data/${dataset_name}/test.parquet,\
 $(pwd)/data/${dataset_name}/math500_test.parquet,\
 $(pwd)/data/${dataset_name}/aime24_test.parquet,\
 $(pwd)/data/${dataset_name}/aime25_test.parquet]
-model_name=Qwen/Qwen2.5-Math-1.5B
+model_name=Qwen/Qwen2.5-0.5B
 selector_model_name=$model_name
 
 # rollout/training hyperparams
 rl_alg=grpo
 n_gpus_per_node=2
 n_nodes=1
-n=4
+n=2
 batch_size=8
 ppo_mini_batch_size=4
 ppo_micro_batch_size_per_gpu=1
@@ -46,6 +46,9 @@ max_action_length=2048
 gpu_memory_utilization=0.4
 do_offload=False
 rollout_mode='async'
+unset ROCR_VISIBLE_DEVICES HIP_VISIBLE_DEVICES
+export CUDA_VISIBLE_DEVICES=0,1
+echo $ROCR_VISIBLE_DEVICES  # should be empty
 
 model_pretty_name=$(echo $model_name | tr '/' '_' | tr '[:upper:]' '[:lower:]')
 run_name="hrl-${reward_manager}-${strategy}-agent-${model_pretty_name}-${rl_alg}-n${n}-b${batch_size}-t${temperature}-lr${lr}"

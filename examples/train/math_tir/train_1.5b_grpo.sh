@@ -1,17 +1,18 @@
 set -x
+export VERL_LOGGING_LEVEL=CRITICAL
 dataset_name=deepmath_torl # or math_torl_offical to use torl training data
 train_data=$(pwd)/data/${dataset_name}/train.parquet
 val_data=[$(pwd)/data/${dataset_name}/test.parquet,\
 $(pwd)/data/${dataset_name}/math500_test.parquet,\
 $(pwd)/data/${dataset_name}/aime24_test.parquet,\
 $(pwd)/data/${dataset_name}/aime25_test.parquet]
-model_name=models/qwen2.5_math_1.5b
+model_name=Qwen/Qwen2.5-0.5B
 rl_alg=grpo # gae(ppo) or grpo, if grpo, then better set n>1 otherwise the group norm can not be effective
-n_gpus_per_node=8
+n_gpus_per_node=2
 n_nodes=1
-n=16
-batch_size=128
-ppo_mini_batch_size=128
+n=2
+batch_size=8
+ppo_mini_batch_size=4
 max_prompt_length=1024
 max_response_length=3072
 max_obs_length=512
@@ -20,7 +21,7 @@ top_p=1.0
 enable_agent=True # enable agent for tool use
 strategy="fsdp"
 action_stop_tokens='```output'
-max_turns=10
+max_turns=3
 kl_loss_coef=0.0
 kl_coef=0
 entropy_coeff=0
@@ -30,7 +31,7 @@ reward_manager=torl
 ppo_micro_batch_size_per_gpu=1
 log_prob_micro_batch_size_per_gpu=8
 tensor_model_parallel_size=1
-gpu_memory_utilization=0.8 # higher gpu_memory_utilization will likely cause the vllm to OOM and get stuck, so set it to a lower value like 0.4 or 0.5
+gpu_memory_utilization=0.7 # higher gpu_memory_utilization will likely cause the vllm to OOM and get stuck, so set it to a lower value like 0.4 or 0.5
 do_offload=True # control actor's fsdp.[param|optimizer]_offload and actor_rollout_ref.rollout.fsdp.[param|optimizer]_offload; if gpu_memory_utilization is set to > 0.6, then do_offload should be set to True otherwise it will cause OOM
 use_dynamic_bsz=True # faster
 ulysses_sequence_parallel_size=1 # set to 1 for normal verl behavior, otherwise it will cause OOM
@@ -50,7 +51,9 @@ export VERL_RUN_ID=$run_name
 export NCCL_DEBUG=INFO
 export VLLM_USE_V1=1
 rollout_mode='async'
-
+unset ROCR_VISIBLE_DEVICES HIP_VISIBLE_DEVICES
+export CUDA_VISIBLE_DEVICES=0,1
+echo $ROCR_VISIBLE_DEVICES  # should be empty
 # temp file for action tokens as verl cannot pass special strs as params
 action_stop_tokens_file="$(pwd)$(mktemp)"
 mkdir -p $(dirname $action_stop_tokens_file)
@@ -144,7 +147,7 @@ PYTHONUNBUFFERED=1 python3 -m verl_tool.trainer.main_ppo \
     +trainer.remove_previous_ckpt_in_save=True \
     trainer.save_freq=10 \
     trainer.test_freq=10 \
-    trainer.total_epochs=10
+    trainer.total_epochs=5
 
 
 pkill -P -9 $server_pid
