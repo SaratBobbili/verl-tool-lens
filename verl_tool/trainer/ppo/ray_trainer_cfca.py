@@ -298,7 +298,6 @@ def compute_cfca_outcome_advantage(
         expanded_advantages_per_turn = torch.zeros((advantages_per_turn.shape[0], int(segment_ids.max().item())+1), device=advantages_per_turn.device)
         expanded_advantages_per_turn[:, 0::2] = advantages_per_turn
         advantages = expanded_advantages_per_turn.gather(1, segment_ids)
-        # TODO: Make sure that what is logged in wandb will still reflect the true rewards, not the advantages
         return advantages, advantages
     else:
         scores = scores.unsqueeze(-1) * response_mask
@@ -586,18 +585,19 @@ class RayPPOTrainerCFCA(RayPPOTrainer):
                             # account for it here
                         # See how the log prob differences for the first few tokens of the second turn behave
                         # when masking the first turn
-                        avg_per_token_log_prob_diffs = get_avg_log_prob_diffs_first_tokens(
-                            raw_masked_log_probs,
-                            old_log_prob.batch['old_log_probs'],
-                            response_segment_ids,
-                            num_turns,
-                            num_tokens=20
-                        )
-                        for token_idx in range(3):
-                            logger.log(
-                                data={f"cfca/avg_LP_diff_token_{token_idx}_2nd_turn": avg_per_token_log_prob_diffs[token_idx].detach().item()},
-                                step=self.global_steps,
+                        if len(raw_masked_log_probs) > 0:
+                            avg_per_token_log_prob_diffs = get_avg_log_prob_diffs_first_tokens(
+                                raw_masked_log_probs,
+                                old_log_prob.batch['old_log_probs'],
+                                response_segment_ids,
+                                num_turns,
+                                num_tokens=20
                             )
+                            for token_idx in range(3):
+                                logger.log(
+                                    data={f"cfca/avg_LP_diff_token_{token_idx}_2nd_turn": avg_per_token_log_prob_diffs[token_idx].detach().item()},
+                                    step=self.global_steps,
+                                )
 
                         if max_num_turns > 2:
                             old_log_prob_tensor = old_log_prob.batch["old_log_probs"]
@@ -632,7 +632,7 @@ class RayPPOTrainerCFCA(RayPPOTrainer):
 
                             # Determine how to distribute each turn's credit to previous turns
                             # Use the temperature parameter T to control the sharpness of the distribution
-                            credit_distributions = get_credit_distributions(turn_log_prob_differences, valid_turn_log_prob_mask)
+                            credit_distributions = get_credit_distributions(turn_log_prob_differences, valid_turn_log_prob_mask, T=self.config.algorithm.get("cfca_temperature", 1.0))
                             # Determine the how the credit for the outcome will be distributed to each turn
                             overall_distribution = distribute_credit(credit_distributions)
                             batch.batch['credit_weights'] = (max_num_turns-1)*overall_distribution
