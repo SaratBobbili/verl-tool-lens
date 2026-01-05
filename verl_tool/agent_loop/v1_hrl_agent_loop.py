@@ -9,7 +9,7 @@ import hydra
 import numpy as np
 import ray
 import torch
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig, OmegaConf, open_dict
 from tensordict import TensorDict
 from tqdm.asyncio import tqdm
 
@@ -51,6 +51,9 @@ class HierarchicalAgentLoop(AgentLoopBase):
         selector_tokenizer,
         expert_server_managers: list[AsyncLLMServerManager],
         data_controller=None,
+        expert_agent_loop_name: str = "verltool_agent",
+        expert_trainer_config: _DummyConfig | None = None,
+        expert_max_turns: int = 1,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -58,6 +61,9 @@ class HierarchicalAgentLoop(AgentLoopBase):
         self.selector_tokenizer = selector_tokenizer
         self.expert_server_managers = expert_server_managers
         self.data_controller = data_controller
+        self.expert_agent_loop_name = expert_agent_loop_name
+        self.expert_trainer_config = expert_trainer_config
+        self.expert_max_turns = expert_max_turns
 
         hrl_cfg: DictConfig = OmegaConf.create({}) if self.config.get("hrl") is None else self.config.hrl
         self.max_turns = hrl_cfg.get("max_turns", 6)
@@ -127,14 +133,14 @@ class HierarchicalAgentLoop(AgentLoopBase):
 
             expert_manager = self.expert_server_managers[routed_expert]
             expert_prompt_ids = bridge.encode(self.tokenizer)
-            expert_output: TokenOutput = await expert_manager.generate(
-                request_id=request_id,
+            expert_output = await self._run_expert_agent_turn(
+                expert_manager=expert_manager,
                 prompt_ids=expert_prompt_ids,
                 sampling_params=sampling_params,
-                image_data=kwargs.get("multi_modal_data", {}).get("image") if kwargs.get("multi_modal_data") else None,
-                audio_data=kwargs.get("multi_modal_data", {}).get("audio") if kwargs.get("multi_modal_data") else None,
+                multi_modal_data=kwargs.get("multi_modal_data"),
+                validate=kwargs.get("validate", False),
             )
-            expert_tokens = expert_output.token_ids
+            expert_tokens = expert_output.response_ids
             remaining_exp = bridge.remaining_budget(self.tokenizer, self.max_total_tokens)
             take = min(len(expert_tokens), remaining_exp)
             expert_tokens = expert_tokens[:take]
@@ -185,6 +191,36 @@ class HierarchicalAgentLoop(AgentLoopBase):
             return int(routed) % self.num_experts
         except Exception:
             return None
+
+    async def _run_expert_agent_turn(
+        self,
+        *,
+        expert_manager: AsyncLLMServerManager,
+        prompt_ids: list[int],
+        sampling_params: dict[str, Any],
+        multi_modal_data: Optional[dict[str, Any]],
+        validate: bool,
+    ) -> AgentLoopOutput:
+        """Run a single-turn expert agent loop using the base agent implementation."""
+        assert self.expert_agent_loop_name in _agent_loop_registry, (
+            f"Expert agent loop {self.expert_agent_loop_name} not registered; "
+            f"available: {_agent_loop_registry.keys()}"
+        )
+        agent_loop_config = _agent_loop_registry[self.expert_agent_loop_name]
+        agent_loop = hydra.utils.instantiate(
+            config=agent_loop_config,
+            trainer_config=self.expert_trainer_config,
+            server_manager=expert_manager,
+            tokenizer=self.tokenizer,
+            processor=self.processor,
+        )
+        output: AgentLoopOutput = await agent_loop.run(
+            sampling_params,
+            raw_prompt_ids=prompt_ids,
+            multi_modal_data=multi_modal_data,
+            validate=validate,
+        )
+        return output
 
 
 @ray.remote(num_cpus=1)
@@ -254,6 +290,17 @@ class HRLAgentLoopWorker:
             AsyncLLMServerManager(config.actor_rollout_ref.rollout, handles) for handles in expert_handle_groups
         ]
         self.data_controller = data_controller
+        self.expert_agent_loop_name = config.hrl.get("expert_agent_loop_name", "verltool_agent")
+        self.expert_max_turns = int(config.hrl.get("expert_max_turns", 1))
+
+        expert_cfg = OmegaConf.create(OmegaConf.to_container(self.config, resolve=False))
+        with open_dict(expert_cfg):
+            expert_cfg.actor_rollout_ref.rollout.agent = expert_cfg.actor_rollout_ref.rollout.get("agent", {})
+            expert_cfg.actor_rollout_ref.rollout.agent.default_agent_loop = self.expert_agent_loop_name
+            expert_cfg.actor_rollout_ref.agent = expert_cfg.actor_rollout_ref.get("agent", {})
+            expert_cfg.actor_rollout_ref.agent["max_turns"] = self.expert_max_turns
+            expert_cfg.actor_rollout_ref.agent["val_max_turns"] = self.expert_max_turns
+        self.expert_trainer_config = _DummyConfig(config=expert_cfg)
 
         # Optional per-worker concurrency control (mirror base worker semantics).
         self.max_concurrent_trajectories = self.config.actor_rollout_ref.agent.get("max_concurrent_trajectories", None)
@@ -346,6 +393,9 @@ class HRLAgentLoopWorker:
                 selector_tokenizer=self.selector_tokenizer,
                 expert_server_managers=self.expert_server_managers,
                 data_controller=self.data_controller,
+                expert_agent_loop_name=self.expert_agent_loop_name,
+                expert_trainer_config=self.expert_trainer_config,
+                expert_max_turns=self.expert_max_turns,
             )
             kwargs["validate"] = trajectory["validate"]
             output: AgentLoopOutput = await agent_loop.run(sampling_params, **kwargs)
