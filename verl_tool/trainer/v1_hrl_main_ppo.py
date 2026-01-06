@@ -26,6 +26,7 @@ from verl_tool.trainer.main_ppo import TaskRunner as BaseTaskRunner
 from omegaconf import open_dict
 import verl.experimental.agent_loop as exp_agent_loop
 from verl_tool.agent_loop.v1_hrl_agent_loop import HRLAgentLoopManager
+from verl_tool.agent_loop.v1_hrl_replay import HRL_ROLE_REPLAY_NAME
 
 
 # Load the HRL overlay config so hrl.* overrides are part of the schema.
@@ -115,6 +116,10 @@ class HRLTaskRunner:
         with open_dict(config):
             config.actor_rollout_ref.rollout.agent = config.actor_rollout_ref.rollout.get("agent", {})
             config.actor_rollout_ref.rollout.agent.default_agent_loop = "v1_hrl_selector_expert"
+            if "hrl" not in config:
+                config.hrl = OmegaConf.create({})
+            if config.hrl.get("role_replay_name") is None:
+                config.hrl.role_replay_name = HRL_ROLE_REPLAY_NAME
 
         # Ensure Ray uses the HRL-aware agent loop manager so selector and expert rollouts
         # are orchestrated during async rollout.

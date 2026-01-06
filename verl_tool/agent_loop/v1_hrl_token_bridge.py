@@ -20,6 +20,10 @@ class TokenBridge:
         """Tokenize only the generated response with provided tokenizer."""
         return tokenizer.encode(self.response_text, add_special_tokens=False)
 
+    def response_token_length(self, tokenizer) -> int:
+        """Count response tokens for a tokenizer."""
+        return len(self.encode_response(tokenizer))
+
     def remaining_budget(self, tokenizer, max_total_tokens: int) -> int:
         used = len(self.encode_response(tokenizer))
         return max(0, max_total_tokens - used)
