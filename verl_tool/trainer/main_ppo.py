@@ -63,6 +63,9 @@ def run_ppo(config) -> None:
         ray_init_kwargs = config.ray_kwargs.get("ray_init", {})
         runtime_env_kwargs = ray_init_kwargs.get("runtime_env", {})
         runtime_env = OmegaConf.merge(default_runtime_env, runtime_env_kwargs)
+        hrl_cfg = config.get("hrl", None)
+        if hrl_cfg and hrl_cfg.get("enable", False):
+            runtime_env["worker_process_setup_hook"] = "verl_tool.trainer.main_ppo.worker_setup_hook"
         ray_init_kwargs = OmegaConf.create({**ray_init_kwargs, "runtime_env": runtime_env})
         print(f"ray init kwargs: {ray_init_kwargs}")
         ray.init(**OmegaConf.to_container(ray_init_kwargs))
@@ -414,3 +417,10 @@ def create_rl_sampler(data_config, dataset):
 if __name__ == "__main__":
     main()
 
+
+def worker_setup_hook():
+    """Ray worker hook that installs the HRL agent loop manager."""
+    import verl.experimental.agent_loop as exp_agent_loop
+    from verl_tool.agent_loop.v1_hrl_agent_loop import HRLAgentLoopManager
+
+    exp_agent_loop.AgentLoopManager = HRLAgentLoopManager

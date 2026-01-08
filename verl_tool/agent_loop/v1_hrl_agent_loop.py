@@ -532,18 +532,18 @@ class HRLAgentLoopWorker:
                 fallback_fields["model_role"] = "selector"
                 role_outputs.append(
                     _InternalAgentLoopOutput(
-                        prompt_ids=prompt_output["input_ids"],
-                        response_ids=response_output["input_ids"],
-                        input_ids=input_ids,
-                        position_ids=position_ids,
-                        response_mask=response_mask,
-                        attention_mask=attention_mask,
-                        response_logprobs=response_logprobs,
-                        multi_modal_inputs=None,
-                        multi_modal_data=output.multi_modal_data,
-                        reward_score=output.reward_score,
-                        num_turns=output.num_turns,
-                        metrics=output.metrics,
+                prompt_ids=prompt_output["input_ids"],
+                response_ids=response_output["input_ids"],
+                input_ids=input_ids,
+                position_ids=position_ids,
+                response_mask=response_mask,
+                attention_mask=attention_mask,
+                response_logprobs=response_logprobs,
+                multi_modal_inputs=None,
+                multi_modal_data=output.multi_modal_data,
+                reward_score=output.reward_score,
+                num_turns=output.num_turns,
+                metrics=output.metrics,
                         extra_fields=fallback_fields,
                     )
                 )

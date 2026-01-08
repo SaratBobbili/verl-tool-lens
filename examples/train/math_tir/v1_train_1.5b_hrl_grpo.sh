@@ -70,7 +70,7 @@ python -m verl_tool.servers.serve --host $host --port $port --tool_type "ipython
 server_pid=$!
 echo "Server (pid=$server_pid) started at $tool_server_url"
 
-PYTHONUNBUFFERED=1 python3 -m verl_tool.trainer.v1_hrl_main_ppo \
+PYTHONUNBUFFERED=1 python3 -m verl_tool.trainer.main_ppo --config-name v1_ppo_trainer_hrl \
     algorithm.adv_estimator=$rl_alg \
     data.train_files=$train_data \
     data.val_files=$val_data \
