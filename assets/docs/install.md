@@ -19,8 +19,8 @@ git submodule update --init --recursive
 conda clean --all -y
 conda create -n verl-tool python=3.10 --no-default-packages
 conda activate verl-tool
-pip install --no-cache-dir -e verl
-pip install --no-cache-dir -e ".[vllm,acecoder,torl,search_tool,transferqueue]"
+pip install --no-cache-dir -e verl[transferqueue]
+pip install --no-cache-dir -e ".[vllm,acecoder,torl,search_tool]"
 conda install cudatoolkit-dev -c conda-forge
 pip install --no-cache-dir 'flash-attn==2.8.3' --no-build-isolation
 ```
