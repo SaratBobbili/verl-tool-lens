@@ -17,10 +17,10 @@ uv pip install "flash-attn==2.8.3" --no-build-isolation
 ```bash
 git submodule update --init --recursive
 conda clean --all -y
-conda create -n verl-tool-env python=3.10 --no-default-packages
-conda activate verl-tool-env
+conda create -n verl-tool python=3.10 --no-default-packages
+conda activate verl-tool
 pip install --no-cache-dir -e verl
-pip install --no-cache-dir -e ".[vllm,acecoder,torl,search_tool]"
+pip install --no-cache-dir -e ".[vllm,acecoder,torl,search_tool,transferqueue]"
 conda install cudatoolkit-dev -c conda-forge
 pip install --no-cache-dir 'flash-attn==2.8.3' --no-build-isolation
 ```
