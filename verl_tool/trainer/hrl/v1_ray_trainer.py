@@ -77,6 +77,27 @@ class HRLRayTrainer:
         client.initialize_storage_manager(manager_type="AsyncSimpleStorageManager", config=cfg)
         return client
 
+    def generate_dataproto(self, prompts: DataProto, partition_id: str = "train_0") -> DataProto:
+        """Push prompts through TransferQueue, run HRL manager, and return DataProto."""
+        prompts_td = prompts.to_tensordict()
+        _run_sync(self.data_system_client.async_put(data=prompts_td, partition_id=partition_id))
+
+        batch_meta = _run_sync(
+            self.data_system_client.async_get_meta(
+                data_fields=list(prompts_td.keys()),
+                batch_size=prompts_td.batch_size[0],
+                partition_id=partition_id,
+                task_name="generate_sequences",
+            )
+        )
+        for key, val in prompts.meta_info.items():
+            batch_meta.set_extra_info(key, val)
+
+        prompts_dp = self._meta_to_dataproto(batch_meta)
+        hrl_output = self.manager.generate_sequences(prompts_dp)
+        batch_meta = self._update_meta_with_output(hrl_output, batch_meta)
+        return self._meta_to_dataproto(batch_meta)
+
     def _meta_to_dataproto(self, batch_meta: BatchMeta) -> DataProto:
         tensor_data = _run_sync(self.data_system_client.async_get_data(batch_meta))
         return DataProto.from_tensordict(tensor_data, meta_info=batch_meta.extra_info.copy())
@@ -109,6 +130,10 @@ class HRLRayTrainer:
         batch_meta = self._update_meta_with_output(hrl_output, batch_meta)
 
         return batch_meta
+
+    def clear_partition(self, partition_id: str) -> None:
+        """Release a partition in the TransferQueue."""
+        _run_sync(self.data_system_client.async_clear_partition(partition_id=partition_id))
 
     def fit_once(self, dataloader, partition_prefix: str = "train") -> list[BatchMeta]:
         metas: list[BatchMeta] = []
