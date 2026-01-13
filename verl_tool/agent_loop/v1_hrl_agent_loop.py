@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import os
 import time
 import uuid
 from typing import Any, Optional
@@ -34,11 +33,47 @@ from verl_tool.agent_loop.agent_loop import (
 from verl_tool.agent_loop.agent_loop import rollout_trace_attr
 from verl.utils.rollout_trace import RolloutTraceConfig
 from verl.utils import hf_tokenizer, hf_processor
-from verl_tool.agent_loop.v1_hrl_token_bridge import TokenBridge
-from verl_tool.agent_loop.v1_hrl_data_controller import HRLDataSharingController
-from verl_tool.agent_loop.v1_hrl_replay import HRLRoleReplay, HRL_ROLE_REPLAY_NAME
 
 logger = logging.getLogger(__name__)
+
+
+class _TranscriptBridge:
+    """Tracks prompt/response text and token-level spans."""
+
+    def __init__(self, prompt_text: str) -> None:
+        self.prompt_text = prompt_text or ""
+        self.response_text = ""
+
+    @property
+    def transcript_text(self) -> str:
+        return self.prompt_text + self.response_text
+
+    def encode(self, tokenizer) -> list[int]:
+        return tokenizer.encode(self.transcript_text, add_special_tokens=False)
+
+    def encode_response(self, tokenizer) -> list[int]:
+        return tokenizer.encode(self.response_text, add_special_tokens=False)
+
+    def response_token_length(self, tokenizer) -> int:
+        return len(self.encode_response(tokenizer))
+
+    def remaining_budget(self, tokenizer, max_total_tokens: int) -> int:
+        used = len(self.encode_response(tokenizer))
+        return max(0, max_total_tokens - used)
+
+    def append_from_tokens(self, tokenizer, token_ids: list[int]) -> str:
+        delta_text = tokenizer.decode(token_ids, skip_special_tokens=False)
+        self.response_text += delta_text
+        return delta_text
+
+    def finalize_tokens(
+        self, tokenizer, max_total_tokens: int
+    ) -> tuple[list[int], list[int], list[int]]:
+        prompt_ids = tokenizer.encode(self.prompt_text, add_special_tokens=False)
+        response_ids = tokenizer.encode(self.response_text, add_special_tokens=False)
+        response_ids = response_ids[:max_total_tokens]
+        response_mask = [1] * len(response_ids)
+        return prompt_ids, response_ids, response_mask
 
 
 @register("v1_hrl_selector_expert")
@@ -51,7 +86,6 @@ class HierarchicalAgentLoop(AgentLoopBase):
         selector_server_manager: AsyncLLMServerManager,
         selector_tokenizer,
         expert_server_managers: list[AsyncLLMServerManager],
-        data_controller=None,
         expert_agent_loop_name: str = "verltool_agent",
         expert_trainer_config: _DummyConfig | None = None,
         expert_max_turns: int = 1,
@@ -61,7 +95,6 @@ class HierarchicalAgentLoop(AgentLoopBase):
         self.selector_server_manager = selector_server_manager
         self.selector_tokenizer = selector_tokenizer
         self.expert_server_managers = expert_server_managers
-        self.data_controller = data_controller
         self.expert_agent_loop_name = expert_agent_loop_name
         self.expert_trainer_config = expert_trainer_config
         self.expert_max_turns = expert_max_turns
@@ -84,13 +117,11 @@ class HierarchicalAgentLoop(AgentLoopBase):
         if not source_text:
             source_text = ""
 
-        bridge = TokenBridge(prompt_text=source_text)
+        bridge = _TranscriptBridge(prompt_text=source_text)
         role_spans: list[dict[str, Any]] = []
         num_turns = 0
         stop_reason = "max_turns"
         request_id = str(uuid.uuid4())
-        if self.data_controller is not None:
-            await self.data_controller.start.remote(request_id, bridge.prompt_text)
 
         selector_params = {
             "temperature": self.selector_sampling.get("temperature", sampling_params.get("temperature", 1.0)),
@@ -119,10 +150,14 @@ class HierarchicalAgentLoop(AgentLoopBase):
             delta_text = bridge.append_from_tokens(self.selector_tokenizer, selector_tokens)
             selector_end = bridge.response_token_length(self.tokenizer)
             if selector_end > selector_start:
-                role_spans.append({"role": "selector", "start": selector_start, "end": selector_end})
-            if self.data_controller is not None:
-                await self.data_controller.push_selector.remote(
-                    request_id, delta_text, selector_output.routed_experts
+                role_spans.append(
+                    {
+                        "role": "selector",
+                        "role_id": 0,
+                        "start": selector_start,
+                        "end": selector_end,
+                        "delta_text": delta_text,
+                    }
                 )
             num_turns += 1
 
@@ -155,10 +190,14 @@ class HierarchicalAgentLoop(AgentLoopBase):
             expert_end = bridge.response_token_length(self.tokenizer)
             if expert_end > expert_start:
                 role_spans.append(
-                    {"role": f"expert_{routed_expert}", "start": expert_start, "end": expert_end}
+                    {
+                        "role": f"expert_{routed_expert}",
+                        "role_id": routed_expert + 1,
+                        "start": expert_start,
+                        "end": expert_end,
+                        "delta_text": delta_text,
+                    }
                 )
-            if self.data_controller is not None:
-                await self.data_controller.push_expert.remote(request_id, routed_expert, delta_text)
             num_turns += 1
 
             if bridge.remaining_budget(self.tokenizer, self.max_total_tokens) <= 0:
@@ -166,8 +205,6 @@ class HierarchicalAgentLoop(AgentLoopBase):
                 break
 
         elapsed = time.time() - t0
-        if self.data_controller is not None:
-            await self.data_controller.finalize.remote(request_id)
 
         prompt_ids, response_ids, response_mask = bridge.finalize_tokens(
             self.tokenizer, self.max_total_tokens
@@ -195,6 +232,8 @@ class HierarchicalAgentLoop(AgentLoopBase):
         return any(tok in self.stop_tokens for tok in tokens)
 
     def _choose_expert(self, selector_output: TokenOutput) -> Optional[int]:
+        if self.num_experts <= 0:
+            return None
         routed = selector_output.routed_experts
         if routed is None:
             return None
@@ -249,8 +288,6 @@ class HRLAgentLoopWorker:
         expert_handle_groups: list[list[ray.actor.ActorHandle]],
         selector_server_handles: list[ray.actor.ActorHandle],
         rm_executor=None,
-        data_controller=None,
-        role_replay=None,
     ):
         self.selector_server_handles = selector_server_handles
         # Flatten all expert handles for base init (uses first group); we keep groups separately
@@ -267,7 +304,6 @@ class HRLAgentLoopWorker:
         self.tokenizer = hf_tokenizer(local_path, trust_remote_code=True)
         self.processor = hf_processor(local_path, trust_remote_code=True)
 
-        self.role_replay = role_replay
         agent_loop_config_path = config.actor_rollout_ref.rollout.agent.agent_loop_config_path
         if agent_loop_config_path:
             agent_loop_configs = OmegaConf.load(agent_loop_config_path)
@@ -304,7 +340,6 @@ class HRLAgentLoopWorker:
         self.expert_server_managers = [
             AsyncLLMServerManager(config.actor_rollout_ref.rollout, handles) for handles in expert_handle_groups
         ]
-        self.data_controller = data_controller
         self.expert_agent_loop_name = config.hrl.get("expert_agent_loop_name", "verltool_agent")
         self.expert_max_turns = int(config.hrl.get("expert_max_turns", 1))
 
@@ -407,7 +442,6 @@ class HRLAgentLoopWorker:
                 selector_server_manager=self.selector_server_manager,
                 selector_tokenizer=self.selector_tokenizer,
                 expert_server_managers=self.expert_server_managers,
-                data_controller=self.data_controller,
                 expert_agent_loop_name=self.expert_agent_loop_name,
                 expert_trainer_config=self.expert_trainer_config,
                 expert_max_turns=self.expert_max_turns,
@@ -493,7 +527,9 @@ class HRLAgentLoopWorker:
                 output.extra_fields["reward_extra_info"] = result["reward_extra_info"]
 
             base_extra_fields = dict(output.extra_fields)
-            spans = base_extra_fields.get("role_spans") or [{"role": "selector", "start": 0, "end": len(output.response_mask)}]
+            spans = base_extra_fields.get("role_spans") or [
+                {"role": "selector", "role_id": 0, "start": 0, "end": len(output.response_mask)}
+            ]
             unpadded_response_length = int(response_output["attention_mask"].sum().item())
             role_outputs: list[_InternalAgentLoopOutput] = []
             for span in spans:
@@ -508,6 +544,7 @@ class HRLAgentLoopWorker:
 
                 role_extra_fields = dict(base_extra_fields)
                 role_extra_fields["model_role"] = span.get("role", "selector")
+                role_extra_fields["hrl_role_id"] = int(span.get("role_id", 0))
 
                 role_outputs.append(
                     _InternalAgentLoopOutput(
@@ -530,20 +567,21 @@ class HRLAgentLoopWorker:
             if not role_outputs:
                 fallback_fields = dict(base_extra_fields)
                 fallback_fields["model_role"] = "selector"
+                fallback_fields["hrl_role_id"] = 0
                 role_outputs.append(
                     _InternalAgentLoopOutput(
-                prompt_ids=prompt_output["input_ids"],
-                response_ids=response_output["input_ids"],
-                input_ids=input_ids,
-                position_ids=position_ids,
-                response_mask=response_mask,
-                attention_mask=attention_mask,
-                response_logprobs=response_logprobs,
-                multi_modal_inputs=None,
-                multi_modal_data=output.multi_modal_data,
-                reward_score=output.reward_score,
-                num_turns=output.num_turns,
-                metrics=output.metrics,
+                        prompt_ids=prompt_output["input_ids"],
+                        response_ids=response_output["input_ids"],
+                        input_ids=input_ids,
+                        position_ids=position_ids,
+                        response_mask=response_mask,
+                        attention_mask=attention_mask,
+                        response_logprobs=response_logprobs,
+                        multi_modal_inputs=None,
+                        multi_modal_data=output.multi_modal_data,
+                        reward_score=output.reward_score,
+                        num_turns=output.num_turns,
+                        metrics=output.metrics,
                         extra_fields=fallback_fields,
                     )
                 )
@@ -559,12 +597,6 @@ class HRLAgentLoopWorker:
                 flat_inputs.append(item)
 
         data = AgentLoopWorker._postprocess(self, flat_inputs)
-
-        if self.role_replay is not None and len(data) > 0:
-            try:
-                self.role_replay.push_batch.remote(data)
-            except Exception as exc:
-                logger.warning(f"Failed to push HRL batch to replay: {exc}")
         return data
 
 
@@ -575,11 +607,7 @@ class HRLAgentLoopManager(AgentLoopManager):
         self.selector_rollout_replicas = []
         self.selector_server_handles = []
         self.selector_server_addresses = []
-        self.data_controller = HRLDataSharingController.remote()
         hrl_cfg = config.get("hrl", {})
-        role_replay_name = hrl_cfg.get("role_replay_name") if hasattr(hrl_cfg, "get") else None
-        self.role_replay_name = role_replay_name or HRL_ROLE_REPLAY_NAME
-        self.role_replay = HRLRoleReplay.options(name=self.role_replay_name).remote()
         super().__init__(config=config, worker_group=worker_group, rm_wg=rm_wg)
         self.expert_handle_groups = []
 
@@ -647,8 +675,6 @@ class HRLAgentLoopManager(AgentLoopManager):
                     self.expert_handle_groups,
                     self.selector_server_handles,
                     self.rm_executor,
-                    self.data_controller,
-                    self.role_replay,
                 )
             )
 
