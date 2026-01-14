@@ -7,6 +7,7 @@ import ray
 import torch
 from omegaconf import OmegaConf
 from tqdm import tqdm
+import verl.experimental.agent_loop as exp_agent_loop
 
 from verl.experimental.dataset.sampler import AbstractCurriculumSampler
 from verl.protocol import DataProto
@@ -18,7 +19,7 @@ from verl.utils.metric import reduce_metrics
 from verl.utils.tracking import Tracking
 from verl.utils.rollout_skip import RolloutSkip
 
-from verl_tool.trainer.hrl.v1_ray_trainer import HRLRayTrainer
+from verl_tool.agent_loop.v1_hrl_agent_loop import HRLAgentLoopManager
 from verl_tool.trainer.ppo.ray_trainer import AgentRayPPOTrainer
 from verl.trainer.ppo.ray_trainer import (
     compute_advantage,
@@ -28,24 +29,27 @@ from verl.trainer.ppo.ray_trainer import (
     compute_reward_async,
 )
 
+# Align agent loop manager to HRL implementation, mirroring verl-tool override.
+exp_agent_loop.AgentLoopManager = HRLAgentLoopManager
+
 
 class HRLAgentRayPPOTrainer(AgentRayPPOTrainer):
     """PPO trainer that swaps rollout generation for HRL TransferQueue rollouts."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.hrl_trainer = HRLRayTrainer(config=self.config)
-        self._hrl_partition_prefix = "train"
+        self.hrl_manager = HRLAgentLoopManager(self.config)
 
     def _hrl_generate_sequences(self, gen_batch: DataProto, partition_id: str) -> DataProto:
-        """Route rollouts through HRL trainer while keeping meta info intact."""
+        """Route rollouts through HRL manager while keeping meta info intact."""
         gen_batch.meta_info.setdefault("eos_token_id", self.tokenizer.eos_token_id)
         gen_batch.meta_info.setdefault("pad_token_id", self.tokenizer.pad_token_id)
         gen_batch.meta_info.setdefault("do_sample", self.config.actor_rollout_ref.rollout.do_sample)
         gen_batch.meta_info.setdefault("recompute_log_prob", False)
         gen_batch.meta_info.setdefault("validate", False)
         gen_batch.meta_info.setdefault("global_steps", self.global_steps)
-        return self.hrl_trainer.generate_dataproto(gen_batch, partition_id=partition_id)
+        gen_batch.meta_info.setdefault("partition_id", partition_id)
+        return self.hrl_manager.generate_sequences(gen_batch)
 
     def fit(self):
         """

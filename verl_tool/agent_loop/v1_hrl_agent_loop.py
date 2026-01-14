@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import math
 import time
 import uuid
 from typing import Any, Optional
@@ -11,6 +12,14 @@ import torch
 from omegaconf import DictConfig, OmegaConf, open_dict
 from tensordict import TensorDict
 from tqdm.asyncio import tqdm
+from transfer_queue import (
+    AsyncTransferQueueClient,
+    BatchMeta,
+    SimpleStorageUnit,
+    TransferQueueController,
+    get_placement_group,
+    process_zmq_server_info,
+)
 
 from verl.protocol import DataProto
 from verl.utils.fs import copy_to_local
@@ -35,6 +44,11 @@ from verl.utils.rollout_trace import RolloutTraceConfig
 from verl.utils import hf_tokenizer, hf_processor
 
 logger = logging.getLogger(__name__)
+
+
+def _run_sync(coro):
+    """Execute an async coroutine synchronously."""
+    return asyncio.get_event_loop().run_until_complete(coro)
 
 
 class _TranscriptBridge:
@@ -288,6 +302,8 @@ class HRLAgentLoopWorker:
         expert_handle_groups: list[list[ray.actor.ActorHandle]],
         selector_server_handles: list[ray.actor.ActorHandle],
         rm_executor=None,
+        tq_controller_info=None,
+        tq_storage_infos=None,
     ):
         self.selector_server_handles = selector_server_handles
         # Flatten all expert handles for base init (uses first group); we keep groups separately
@@ -332,6 +348,16 @@ class HRLAgentLoopWorker:
         run_time_context = ray.get_runtime_context()
         self.name = run_time_context.get_actor_name() or "unnamed"
 
+        self.data_client = None
+        if tq_controller_info is not None and tq_storage_infos is not None:
+            cfg = OmegaConf.create(self.config, flags={"allow_objects": True})
+            self.data_client = AsyncTransferQueueClient(
+                client_id=f"HRLWorker-{self.name}",
+                controller_info=tq_controller_info,
+                storage_unit_infos=tq_storage_infos,
+            )
+            self.data_client.initialize_storage_manager(manager_type="AsyncSimpleStorageManager", config=cfg)
+
         selector_path = copy_to_local(config.hrl.selector.model.path)
         self.selector_tokenizer = hf_tokenizer(selector_path, trust_remote_code=True)
         self.selector_processor = hf_processor(selector_path, trust_remote_code=True)
@@ -356,6 +382,21 @@ class HRLAgentLoopWorker:
         self.max_concurrent_trajectories = self.config.actor_rollout_ref.agent.get("max_concurrent_trajectories", None)
 
     async def generate_sequences(self, batch: DataProto) -> DataProto:
+        """Generate sequences from HRL agent loop."""
+        return await self._generate_from_dataproto(batch)
+
+    async def generate_sequences_from_queue(self, batch_meta: BatchMeta) -> BatchMeta:
+        """Pull inputs from TransferQueue, run HRL loop, and push outputs back."""
+        if self.data_client is None:
+            raise RuntimeError("TransferQueue client not initialized for HRLAgentLoopWorker")
+
+        tensor_data = await self.data_client.async_get_data(batch_meta)
+        batch = DataProto.from_tensordict(tensor_data, meta_info=batch_meta.extra_info.copy())
+        output = await self._generate_from_dataproto(batch)
+        updated_meta = await self._update_meta_with_output(output, batch_meta)
+        return updated_meta
+
+    async def _generate_from_dataproto(self, batch: DataProto) -> DataProto:
         """Generate sequences from HRL agent loop."""
         config = self.config.actor_rollout_ref.rollout
         sampling_params = dict(
@@ -382,7 +423,6 @@ class HRLAgentLoopWorker:
             batch.meta_info.get("global_steps", -1), index.tolist(), batch.meta_info.get("validate", False)
         )
 
-        # Optional semaphore to bound per-worker concurrency.
         if self.max_concurrent_trajectories is not None:
             print(f"HRL Agent Worker {self.name} using semaphore with max concurrency {self.max_concurrent_trajectories}")
             semaphore = asyncio.Semaphore(self.max_concurrent_trajectories)
@@ -405,7 +445,11 @@ class HRLAgentLoopWorker:
         tasks = []
         for i in range(len(batch)):
             kwargs = {k: v[i] for k, v in batch.non_tensor_batch.items()}
-            tasks.append(asyncio.create_task(semaphore_wrapper(self._run_agent_loop)(sampling_params, trajectory_info[i], **kwargs)))
+            tasks.append(
+                asyncio.create_task(
+                    semaphore_wrapper(self._run_agent_loop)(sampling_params, trajectory_info[i], **kwargs)
+                )
+            )
 
         print(f"HRL Agent Worker {self.name} launching {len(tasks)} tasks...")
         outputs = await tqdm.gather(*tasks, desc=f"HRL Agent Worker {self.name} Looping", total=len(tasks))
@@ -599,17 +643,70 @@ class HRLAgentLoopWorker:
         data = AgentLoopWorker._postprocess(self, flat_inputs)
         return data
 
+    async def _update_meta_with_output(self, output: DataProto, batch_meta: BatchMeta) -> BatchMeta:
+        for k, v in output.meta_info.items():
+            batch_meta.set_extra_info(k, v)
+        if len(output) > 0:
+            tensordict = output.to_tensordict()
+            for key in output.meta_info.keys():
+                tensordict.pop(key)
+            await self.data_client.async_put(data=tensordict, metadata=batch_meta)
+            batch_meta.add_fields(tensordict)
+        return batch_meta
+
 
 class HRLAgentLoopManager(AgentLoopManager):
     """Agent loop manager that spins up selector and expert rollout servers."""
 
     def __init__(self, config: DictConfig, worker_group=None, rm_wg=None):
+        self.config = config
         self.selector_rollout_replicas = []
         self.selector_server_handles = []
         self.selector_server_addresses = []
-        hrl_cfg = config.get("hrl", {})
-        super().__init__(config=config, worker_group=worker_group, rm_wg=rm_wg)
         self.expert_handle_groups = []
+        self.tq_controller_info = None
+        self.tq_storage_infos = None
+        self.data_system_client = None
+        self.partition_prefix = "hrl_partition"
+        self._initialize_transfer_queue()
+        super().__init__(config=config, worker_group=worker_group, rm_wg=rm_wg)
+
+    def _initialize_transfer_queue(self):
+        cfg = OmegaConf.create(self.config, flags={"allow_objects": True})
+        total_storage_size = (
+            cfg.data.train_batch_size * cfg.trainer.num_global_batch * cfg.actor_rollout_ref.rollout.n
+        )
+
+        storage_pg = get_placement_group(1, num_cpus_per_actor=1)
+        storage_units = {
+            0: SimpleStorageUnit.options(
+                placement_group=storage_pg,
+                placement_group_bundle_index=0,
+            ).remote(storage_unit_size=math.ceil(total_storage_size))
+        }
+        controller_pg = get_placement_group(1, num_cpus_per_actor=1)
+        controller = TransferQueueController.options(
+            placement_group=controller_pg, placement_group_bundle_index=0
+        ).remote(
+            num_storage_units=1,
+            global_batch_size=cfg.data.train_batch_size,
+            num_global_batch=cfg.trainer.num_global_batch,
+            num_n_samples=cfg.actor_rollout_ref.rollout.n,
+        )
+
+        controller_info = process_zmq_server_info(controller)
+        storage_infos = process_zmq_server_info(storage_units)
+        ray.get([unit.register_controller_info.remote(controller_info) for unit in storage_units.values()])
+
+        self.data_system_client = AsyncTransferQueueClient(
+            client_id="HRLAgentLoopManager",
+            controller_info=controller_info,
+            storage_unit_infos=storage_infos,
+        )
+        self.data_system_client.initialize_storage_manager(manager_type="AsyncSimpleStorageManager", config=cfg)
+
+        self.tq_controller_info = controller_info
+        self.tq_storage_infos = storage_infos
 
     def _initialize_llm_servers(self):
         super()._initialize_llm_servers()
@@ -675,6 +772,69 @@ class HRLAgentLoopManager(AgentLoopManager):
                     self.expert_handle_groups,
                     self.selector_server_handles,
                     self.rm_executor,
+                    self.tq_controller_info,
+                    self.tq_storage_infos,
                 )
             )
+
+    def generate_sequences(self, prompts: DataProto) -> DataProto:
+        """Use TransferQueue to dispatch HRL rollouts across workers."""
+        if self.rm_micro_batch_size and len(prompts) % self.rm_micro_batch_size != 0:
+            raise ValueError(
+                f"The length of prompts {len(prompts)} cannot divide the world size of rm_wg {self.rm_micro_batch_size}"
+            )
+        if self.config.actor_rollout_ref.rollout.free_cache_engine:
+            self.wake_up()
+
+        base_partition = prompts.meta_info.get("partition_id") or f"{self.partition_prefix}_{uuid.uuid4().hex}"
+        print(f"Dispatching {len(prompts)} prompts via TransferQueue to {len(self.agent_loop_workers)} HRL workers...")
+
+        chunks = prompts.chunk(len(self.agent_loop_workers))
+        prepared_batches: list[BatchMeta] = []
+        partitions: list[str] = []
+        for idx, chunk in enumerate(chunks):
+            if len(chunk) == 0:
+                continue
+            partition_id = f"{base_partition}_{idx}"
+            partitions.append(partition_id)
+            tensor_data = chunk.to_tensordict()
+            _run_sync(self.data_system_client.async_put(data=tensor_data, partition_id=partition_id))
+            batch_meta = _run_sync(
+                self.data_system_client.async_get_meta(
+                    data_fields=list(tensor_data.keys()),
+                    batch_size=tensor_data.batch_size[0],
+                    partition_id=partition_id,
+                    task_name="generate_sequences",
+                )
+            )
+            for key, val in chunk.meta_info.items():
+                batch_meta.set_extra_info(key, val)
+            prepared_batches.append(batch_meta)
+
+        if not prepared_batches:
+            if self.config.actor_rollout_ref.rollout.free_cache_engine:
+                self.sleep()
+            return prompts
+
+        worker_inputs = list(zip(self.agent_loop_workers, prepared_batches, strict=False))
+        outputs_meta: list[BatchMeta] = ray.get(
+            [worker.generate_sequences_from_queue.remote(batch_meta) for worker, batch_meta in worker_inputs]
+        )
+
+        output_chunks: list[DataProto] = [self._meta_to_dataproto(meta) for meta in outputs_meta]
+        for partition_id in partitions:
+            _run_sync(self.data_system_client.async_clear_partition(partition_id=partition_id))
+
+        output = DataProto.concat(output_chunks)
+        if self.config.actor_rollout_ref.rollout.free_cache_engine:
+            self.sleep()
+
+        metrics = [out.meta_info.pop("metrics") for out in output_chunks]
+        timing = self._performance_metrics(metrics, output)
+        output.meta_info = {"timing": timing, **output_chunks[0].meta_info}
+        return output
+
+    def _meta_to_dataproto(self, batch_meta: BatchMeta) -> DataProto:
+        tensor_data = _run_sync(self.data_system_client.async_get_data(batch_meta))
+        return DataProto.from_tensordict(tensor_data, meta_info=batch_meta.extra_info.copy())
 

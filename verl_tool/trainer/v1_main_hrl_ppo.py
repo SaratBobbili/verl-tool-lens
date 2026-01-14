@@ -28,7 +28,6 @@ def run_hrl_ppo(config) -> None:
         ray_init_kwargs = config.ray_kwargs.get("ray_init", {})
         runtime_env_kwargs = ray_init_kwargs.get("runtime_env", {})
         runtime_env = OmegaConf.merge(default_runtime_env, runtime_env_kwargs)
-        runtime_env["worker_process_setup_hook"] = "verl_tool.trainer.main_ppo.worker_setup_hook"
         ray_init_kwargs = OmegaConf.create({**ray_init_kwargs, "runtime_env": runtime_env})
         print(f"ray init kwargs: {ray_init_kwargs}")
         ray.init(**OmegaConf.to_container(ray_init_kwargs))
@@ -224,3 +223,4 @@ class HRLTaskRunner:
 
 if __name__ == "__main__":
     main()
+
