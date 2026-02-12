@@ -1,0 +1,272 @@
++ source .venv/bin/activate
+++ '[' -z '' ']'
+++ '[' -n x ']'
+++ SCRIPT_PATH=.venv/bin/activate
+++ '[' .venv/bin/activate = examples/train/math_tir/v1_train_0.5b_grpo_multi-turn_w_tool.sh ']'
+++ deactivate nondestructive
+++ unset -f pydoc
+++ '[' -z '' ']'
+++ '[' -z '' ']'
+++ hash -r
+++ '[' -z '' ']'
+++ unset VIRTUAL_ENV
+++ unset VIRTUAL_ENV_PROMPT
+++ '[' '!' nondestructive = nondestructive ']'
+++ VIRTUAL_ENV=/mnt/shared-scratch/Shakkottai_S/saratb/verl-tool-lens/.venv
+++ '[' linux-gnu = cygwin ']'
+++ '[' linux-gnu = msys ']'
+++ export VIRTUAL_ENV
+++ '[' -z '' ']'
+++ unset SCRIPT_PATH
+++ _OLD_VIRTUAL_PATH=/mnt/shared-scratch/Shakkottai_S/saratb/miniconda3/envs/verl-tool-env/bin:/mnt/shared-scratch/Shakkottai_S/saratb/miniconda3/condabin:/home/grads/s/saratb/.cursor-server/cli/servers/Stable-3578107fdf149b00059ddad37048220e41681000/server/bin/remote-cli:/usr/local/texlive/2025/bin/x86_64-linux:/opt/coe/bin:/home/grads/s/saratb/.local/bin:/usr/local/texlive/2025/bin/x86_64-linux:/usr/share/Modules/bin:/opt/coe/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/home/grads/s/saratb/.cursor-server/extensions/ms-python.debugpy-2025.18.0-linux-x64/bundled/scripts/noConfigScripts
+++ PATH=/mnt/shared-scratch/Shakkottai_S/saratb/verl-tool-lens/.venv/bin:/mnt/shared-scratch/Shakkottai_S/saratb/miniconda3/envs/verl-tool-env/bin:/mnt/shared-scratch/Shakkottai_S/saratb/miniconda3/condabin:/home/grads/s/saratb/.cursor-server/cli/servers/Stable-3578107fdf149b00059ddad37048220e41681000/server/bin/remote-cli:/usr/local/texlive/2025/bin/x86_64-linux:/opt/coe/bin:/home/grads/s/saratb/.local/bin:/usr/local/texlive/2025/bin/x86_64-linux:/usr/share/Modules/bin:/opt/coe/bin:/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/home/grads/s/saratb/.cursor-server/extensions/ms-python.debugpy-2025.18.0-linux-x64/bundled/scripts/noConfigScripts
+++ export PATH
+++ '[' xverl-tool '!=' x ']'
+++ VIRTUAL_ENV_PROMPT=verl-tool
+++ export VIRTUAL_ENV_PROMPT
+++ '[' -z '' ']'
+++ '[' -z '' ']'
+++ _OLD_VIRTUAL_PS1=
+++ PS1='(verl-tool) '
+++ export PS1
+++ alias pydoc
+++ true
+++ hash -r
++ dataset_name=deepmath_torl
+++ pwd
++ train_data=/mnt/shared-scratch/Shakkottai_S/saratb/verl-tool-lens/data/deepmath_torl/train.parquet
+++ pwd
+++ pwd
+++ pwd
+++ pwd
++ val_data='[/mnt/shared-scratch/Shakkottai_S/saratb/verl-tool-lens/data/deepmath_torl/test.parquet,/mnt/shared-scratch/Shakkottai_S/saratb/verl-tool-lens/data/deepmath_torl/math500_test.parquet,/mnt/shared-scratch/Shakkottai_S/saratb/verl-tool-lens/data/deepmath_torl/aime24_test.parquet,/mnt/shared-scratch/Shakkottai_S/saratb/verl-tool-lens/data/deepmath_torl/aime25_test.parquet]'
++ model_name=Qwen/Qwen2.5-0.5B-Instruct
++ rl_alg=grpo
++ n_gpus_per_node=2
++ n_nodes=1
++ n=16
++ batch_size=8
++ ppo_mini_batch_size=8
++ max_prompt_length=1024
++ max_response_length=3072
++ max_obs_length=512
++ temperature=1.0
++ top_p=1.0
++ enable_agent=True
++ strategy=fsdp
++ action_stop_tokens='```output'
++ max_turns=10
++ kl_loss_coef=0.0
++ kl_coef=0
++ entropy_coeff=0
++ kl_loss_type=low_var_kl
++ lr=1e-6
++ reward_manager=torl
++ wandb_project=multi-turn-w-tool-0.5b
++ ppo_micro_batch_size_per_gpu=1
++ log_prob_micro_batch_size_per_gpu=8
++ tensor_model_parallel_size=1
++ gpu_memory_utilization=0.6
++ do_offload=True
++ use_dynamic_bsz=True
++ ulysses_sequence_parallel_size=1
++ fsdp_size=-1
++ additional_eos_token_ids='[151645]'
++ mask_observations=True
++ enable_mtrl=True
++ max_action_length=2048
+++ echo Qwen/Qwen2.5-0.5B-Instruct
+++ tr / _
+++ tr '[:upper:]' '[:lower:]'
++ model_pretty_name=qwen_qwen2.5-0.5b-instruct
++ run_name_postfix=acc-only-4gpu
++ '[' True = True ']'
++ run_name=torl-fsdp-agent-qwen_qwen2.5-0.5b-instruct-grpo-n16-b8-t1.0-lr1e-6acc-only-4gpu
++ export VERL_RUN_ID=torl-fsdp-agent-qwen_qwen2.5-0.5b-instruct-grpo-n16-b8-t1.0-lr1e-6acc-only-4gpu
++ VERL_RUN_ID=torl-fsdp-agent-qwen_qwen2.5-0.5b-instruct-grpo-n16-b8-t1.0-lr1e-6acc-only-4gpu
++ export NCCL_DEBUG=WARN
++ NCCL_DEBUG=WARN
++ export VLLM_USE_V1=1
++ VLLM_USE_V1=1
++ rollout_mode=async
++ unset ROCR_VISIBLE_DEVICES HIP_VISIBLE_DEVICES
++ export CUDA_VISIBLE_DEVICES=0,1
++ CUDA_VISIBLE_DEVICES=0,1
++ echo
+++ pwd
+++ mktemp
++ action_stop_tokens_file=/mnt/shared-scratch/Shakkottai_S/saratb/verl-tool-lens/tmp/tmp.MvTeBSSYMA
+++ dirname /mnt/shared-scratch/Shakkottai_S/saratb/verl-tool-lens/tmp/tmp.MvTeBSSYMA
++ mkdir -p /mnt/shared-scratch/Shakkottai_S/saratb/verl-tool-lens/tmp
++ echo -e -n '```output'
++ tee /mnt/shared-scratch/Shakkottai_S/saratb/verl-tool-lens/tmp/tmp.MvTeBSSYMA
++ echo action_stop_tokens_file=/mnt/shared-scratch/Shakkottai_S/saratb/verl-tool-lens/tmp/tmp.MvTeBSSYMA
+++ hostname -i
+++ awk '{print $1}'
++ host=192.168.2.23
+++ shuf -i 30000-31000 -n 1
++ port=30473
++ tool_server_url=http://192.168.2.23:30473/get_observation
++ server_pid=2145443
++ echo 'Server (pid=2145443) started at http://192.168.2.23:30473/get_observation'
++ python -m verl_tool.servers.serve --host 192.168.2.23 --port 30473 --tool_type ipython_code --workers_per_tool 8 --use_ray=True
+++ pwd
+examples/train/math_tir/v1_train_0.5b_grpo_multi-turn_w_tool.sh: line 77: logs/tool_server.log: No such file or directory
++ PYTHONUNBUFFERED=1
++ python3 -m verl_tool.trainer.main_ppo algorithm.adv_estimator=grpo data.train_files=/mnt/shared-scratch/Shakkottai_S/saratb/verl-tool-lens/data/deepmath_torl/train.parquet 'data.val_files=[/mnt/shared-scratch/Shakkottai_S/saratb/verl-tool-lens/data/deepmath_torl/test.parquet,/mnt/shared-scratch/Shakkottai_S/saratb/verl-tool-lens/data/deepmath_torl/math500_test.parquet,/mnt/shared-scratch/Shakkottai_S/saratb/verl-tool-lens/data/deepmath_torl/aime24_test.parquet,/mnt/shared-scratch/Shakkottai_S/saratb/verl-tool-lens/data/deepmath_torl/aime25_test.parquet]' data.train_batch_size=8 data.val_batch_size=1024 data.max_prompt_length=1024 data.max_response_length=3072 data.truncation=right reward_model.reward_manager=torl reward_model.launch_reward_fn_async=True actor_rollout_ref.model.path=Qwen/Qwen2.5-0.5B-Instruct actor_rollout_ref.model.enable_gradient_checkpointing=True actor_rollout_ref.actor.optim.lr=1e-6 actor_rollout_ref.actor.optim.lr_warmup_steps=10 actor_rollout_ref.model.use_remove_padding=True actor_rollout_ref.model.trust_remote_code=True 'actor_rollout_ref.actor.checkpoint.save_contents=[model,optimizer,extra,hf_model]' actor_rollout_ref.actor.ppo_mini_batch_size=8 actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=1 actor_rollout_ref.actor.use_dynamic_bsz=True actor_rollout_ref.actor.use_kl_loss=True actor_rollout_ref.actor.strategy=fsdp actor_rollout_ref.actor.kl_loss_coef=0.0 actor_rollout_ref.actor.kl_loss_type=low_var_kl actor_rollout_ref.actor.entropy_coeff=0 actor_rollout_ref.actor.fsdp_config.param_offload=True actor_rollout_ref.actor.fsdp_config.optimizer_offload=True actor_rollout_ref.actor.fsdp_config.fsdp_size=-1 actor_rollout_ref.actor.ulysses_sequence_parallel_size=1 actor_rollout_ref.agent.enable_agent=True actor_rollout_ref.agent.tool_server_url=http://192.168.2.23:30473/get_observation actor_rollout_ref.agent.max_prompt_length=1024 actor_rollout_ref.agent.max_response_length=3072 actor_rollout_ref.agent.max_start_length=1024 actor_rollout_ref.agent.max_obs_length=512 actor_rollout_ref.agent.max_turns=10 'actor_rollout_ref.agent.additional_eos_token_ids=[151645]' actor_rollout_ref.agent.mask_observations=True actor_rollout_ref.agent.action_stop_tokens=/mnt/shared-scratch/Shakkottai_S/saratb/verl-tool-lens/tmp/tmp.MvTeBSSYMA actor_rollout_ref.agent.enable_mtrl=True actor_rollout_ref.agent.max_action_length=2048 +actor_rollout_ref.agent.retokenization=True actor_rollout_ref.rollout.tensor_model_parallel_size=1 actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=8 actor_rollout_ref.rollout.enforce_eager=False actor_rollout_ref.rollout.free_cache_engine=True actor_rollout_ref.rollout.name=vllm actor_rollout_ref.rollout.gpu_memory_utilization=0.6 actor_rollout_ref.rollout.temperature=1.0 actor_rollout_ref.rollout.top_p=1.0 actor_rollout_ref.rollout.top_k=-1 actor_rollout_ref.rollout.n=16 actor_rollout_ref.rollout.log_prob_use_dynamic_bsz=True actor_rollout_ref.rollout.max_num_seqs=64 actor_rollout_ref.rollout.mode=async actor_rollout_ref.rollout.val_kwargs.n=8 actor_rollout_ref.rollout.val_kwargs.temperature=1.0 actor_rollout_ref.ref.log_prob_use_dynamic_bsz=True actor_rollout_ref.ref.fsdp_config.param_offload=True actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=8 actor_rollout_ref.ref.ulysses_sequence_parallel_size=1 critic.optim.lr=1e-5 critic.strategy=fsdp critic.model.path=Qwen/Qwen2.5-0.5B-Instruct critic.model.fsdp_config.fsdp_size=-1 critic.ppo_micro_batch_size_per_gpu=1 critic.ulysses_sequence_parallel_size=1 algorithm.kl_ctrl.kl_coef=0 'trainer.logger=[console,wandb]' trainer.project_name=multi-turn-w-tool-0.5b trainer.experiment_name=torl-fsdp-agent-qwen_qwen2.5-0.5b-instruct-grpo-n16-b8-t1.0-lr1e-6acc-only-4gpu trainer.val_before_train=False trainer.default_hdfs_dir=null trainer.rollout_data_dir=/mnt/shared-scratch/Shakkottai_S/saratb/verl-tool-lens/verl_step_records/torl-fsdp-agent-qwen_qwen2.5-0.5b-instruct-grpo-n16-b8-t1.0-lr1e-6acc-only-4gpu trainer.validation_data_dir=null trainer.n_gpus_per_node=2 trainer.nnodes=1 +trainer.remove_previous_ckpt_in_save=False trainer.save_freq=5 trainer.test_freq=5 trainer.total_epochs=20
+2026-02-12 10:59:42,834	INFO worker.py:1998 -- Started a local Ray instance. View the dashboard at [1m[32m127.0.0.1:8265 [39m[22m
+/mnt/shared-scratch/Shakkottai_S/saratb/verl-tool-lens/.venv/lib/python3.10/site-packages/ray/_private/worker.py:2046: FutureWarning: Tip: In future versions of Ray, Ray will no longer override accelerator visible devices env var if num_gpus=0 or num_gpus=None (default). To enable this behavior and turn off this error message, set RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO=0
+  warnings.warn(
+[36m(TaskRunner pid=2148095)[0m /mnt/shared-scratch/Shakkottai_S/saratb/verl-tool-lens/verl_tool/trainer/main_ppo.py:266: UserWarning: Disabled critic as algorithm.adv_estimator != gae. If it is not intended, please set critic.enable=True
+[36m(TaskRunner pid=2148095)[0m   use_critic=need_critic(config),
+[36m(TaskRunner pid=2148095)[0m /mnt/shared-scratch/Shakkottai_S/saratb/verl-tool-lens/verl/verl/utils/profiler/config.py:49: UserWarning: Torch profiler tool config is not fully supported now.
+[36m(TaskRunner pid=2148095)[0m   warnings.warn("Torch profiler tool config is not fully supported now.", stacklevel=1)
+[36m(TaskRunner pid=2148095)[0m /mnt/shared-scratch/Shakkottai_S/saratb/verl-tool-lens/verl/verl/trainer/ppo/ray_trainer.py:335: UserWarning: Disabled critic as algorithm.adv_estimator != gae. If it is not intended, please set critic.enable=True
+[36m(TaskRunner pid=2148095)[0m   self.use_critic = need_critic(self.config)
+[36m(WorkerDict pid=2148503)[0m `torch_dtype` is deprecated! Use `dtype` instead!
+[36m(WorkerDict pid=2148502)[0m Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen2ForCausalLM is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", dtype=torch.float16)`
+[36m(WorkerDict pid=2148502)[0m /mnt/shared-scratch/Shakkottai_S/saratb/verl-tool-lens/verl/verl/utils/profiler/config.py:49: UserWarning: Torch profiler tool config is not fully supported now.
+[36m(WorkerDict pid=2148502)[0m   warnings.warn("Torch profiler tool config is not fully supported now.", stacklevel=1)
+[36m(WorkerDict pid=2148502)[0m `torch_dtype` is deprecated! Use `dtype` instead!
+[36m(WorkerDict pid=2148503)[0m Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen2Model is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", dtype=torch.float16)`[32m [repeated 3x across cluster] (Ray deduplicates logs by default. Set RAY_DEDUP_LOGS=0 to disable log deduplication, or see https://docs.ray.io/en/master/ray-observability/user-guides/configure-logging.html#log-deduplication for more options.)[0m
+[36m(WorkerDict pid=2148502)[0m /mnt/shared-scratch/Shakkottai_S/saratb/verl-tool-lens/.venv/lib/python3.10/site-packages/torch/distributed/fsdp/fully_sharded_data_parallel.py:678: FutureWarning: FSDP.state_dict_type() and FSDP.set_state_dict_type() are being deprecated. Please use APIs, get_state_dict() and set_state_dict(), which can support different parallelisms, FSDP1, FSDP2, DDP. API doc: https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict.get_state_dict .Tutorial: https://pytorch.org/tutorials/recipes/distributed_checkpoint_recipe.html .
+[36m(WorkerDict pid=2148502)[0m   warnings.warn(
+[36m(VerlToolvLLMHttpServer pid=2148888)[0m INFO:2026-02-12 11:00:54,955:vLLMHttpServer, replica_rank: 0, master address: 192.168.2.23, master port: 34357, data parallel master port: 39305
+[36m(VerlToolvLLMHttpServer pid=2148888)[0m INFO:2026-02-12 11:00:54,978:override_generation_config: {'temperature': 1.0, 'top_k': -1, 'top_p': 1.0, 'repetition_penalty': 1.0, 'max_new_tokens': 3072}
+[36m(WorkerDict pid=2148503)[0m /mnt/shared-scratch/Shakkottai_S/saratb/verl-tool-lens/verl/verl/utils/profiler/config.py:49: UserWarning: Torch profiler tool config is not fully supported now.
+[36m(WorkerDict pid=2148503)[0m   warnings.warn("Torch profiler tool config is not fully supported now.", stacklevel=1)
+[36m(WorkerDict pid=2148503)[0m /mnt/shared-scratch/Shakkottai_S/saratb/verl-tool-lens/.venv/lib/python3.10/site-packages/torch/distributed/fsdp/fully_sharded_data_parallel.py:678: FutureWarning: FSDP.state_dict_type() and FSDP.set_state_dict_type() are being deprecated. Please use APIs, get_state_dict() and set_state_dict(), which can support different parallelisms, FSDP1, FSDP2, DDP. API doc: https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict.get_state_dict .Tutorial: https://pytorch.org/tutorials/recipes/distributed_checkpoint_recipe.html .
+[36m(WorkerDict pid=2148503)[0m   warnings.warn(
+[36m(VerlToolvLLMHttpServer pid=2148888)[0m Using blocking ray.get inside async actor. This blocks the event loop. Please use `await` on object ref with asyncio.gather if you want to yield execution to the event loop instead.
+[36m(VerlToolvLLMHttpServer pid=2148888)[0m INFO:2026-02-12 11:00:55,082:replica_rank=0, node_rank=0, nnodes=1, get worker zmq addresses: ['ipc:///tmp/verl_vllm_zmq_2148502_saratb.ipc']
+[36m(VerlToolvLLMHttpServer pid=2148888)[0m `torch_dtype` is deprecated! Use `dtype` instead!
+[36m(WorkerDict pid=2148502)[0m Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):   0%|          | 0/19 [00:00<?, ?it/s]
+[36m(VerlToolvLLMHttpServer pid=2148887)[0m INFO:2026-02-12 11:00:54,958:vLLMHttpServer, replica_rank: 1, master address: 192.168.2.23, master port: 42531, data parallel master port: 38347
+[36m(VerlToolvLLMHttpServer pid=2148887)[0m INFO:2026-02-12 11:00:54,979:override_generation_config: {'temperature': 1.0, 'top_k': -1, 'top_p': 1.0, 'repetition_penalty': 1.0, 'max_new_tokens': 3072}
+[36m(VerlToolvLLMHttpServer pid=2148887)[0m Using blocking ray.get inside async actor. This blocks the event loop. Please use `await` on object ref with asyncio.gather if you want to yield execution to the event loop instead.
+[36m(VerlToolvLLMHttpServer pid=2148887)[0m INFO:2026-02-12 11:00:55,082:replica_rank=1, node_rank=0, nnodes=1, get worker zmq addresses: ['ipc:///tmp/verl_vllm_zmq_2148503_saratb.ipc']
+[36m(VerlToolvLLMHttpServer pid=2148887)[0m `torch_dtype` is deprecated! Use `dtype` instead!
+[36m(WorkerDict pid=2148502)[0m Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):   5%|▌         | 1/19 [00:00<00:03,  5.17it/s]
+[36m(WorkerDict pid=2148502)[0m Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  37%|███▋      | 7/19 [00:00<00:00, 26.28it/s]
+[36m(WorkerDict pid=2148502)[0m Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  68%|██████▊   | 13/19 [00:00<00:00, 26.59it/s]
+[36m(WorkerDict pid=2148502)[0m Capturing CUDA graphs (mixed prefill-decode, PIECEWISE):  89%|████████▉ | 17/19 [00:00<00:00, 28.93it/s]
+[36m(WorkerDict pid=2148502)[0m Capturing CUDA graphs (mixed prefill-decode, PIECEWISE): 100%|██████████| 19/19 [00:00<00:00, 19.37it/s]
+[36m(WorkerDict pid=2148502)[0m Capturing CUDA graphs (decode, FULL):   0%|          | 0/11 [00:00<?, ?it/s]
+[36m(WorkerDict pid=2148502)[0m Capturing CUDA graphs (decode, FULL):   9%|▉         | 1/11 [00:00<00:03,  2.69it/s]
+[36m(WorkerDict pid=2148502)[0m Capturing CUDA graphs (decode, FULL):  55%|█████▍    | 6/11 [00:00<00:00, 15.39it/s]
+[36m(WorkerDict pid=2148502)[0m Capturing CUDA graphs (decode, FULL): 100%|██████████| 11/11 [00:00<00:00, 24.45it/s]Capturing CUDA graphs (decode, FULL): 100%|██████████| 11/11 [00:00<00:00, 18.63it/s]
+[36m(VerlToolvLLMHttpServer pid=2148888)[0m INFO:2026-02-12 11:02:04,988:Initializing a V1 LLM engine with config: model='Qwen/Qwen2.5-0.5B-Instruct', speculative_config=None, tokenizer='Qwen/Qwen2.5-0.5B-Instruct', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, tokenizer_revision=None, trust_remote_code=False, dtype=torch.bfloat16, max_seq_len=4096, download_dir=None, load_format=dummy, tensor_parallel_size=1, pipeline_parallel_size=1, data_parallel_size=1, disable_custom_all_reduce=True, quantization=None, enforce_eager=False, kv_cache_dtype=auto, device_config=cuda, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_fallback=False, disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser=''), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None), seed=0, served_model_name=Qwen/Qwen2.5-0.5B-Instruct, enable_prefix_caching=True, chunked_prefill_enabled=True, pooler_config=None, compilation_config={"level":3,"debug_dump_path":"","cache_dir":"","backend":"","custom_ops":[],"splitting_ops":["vllm.unified_attention","vllm.unified_attention_with_output","vllm.mamba_mixer2","vllm.mamba_mixer","vllm.short_conv","vllm.linear_attention","vllm.plamo2_mamba_mixer","vllm.gdn_attention","vllm.sparse_attn_indexer"],"use_inductor":true,"compile_sizes":[],"inductor_compile_config":{"enable_auto_functionalized_v2":false},"inductor_passes":{},"cudagraph_mode":[2,1],"use_cudagraph":true,"cudagraph_num_of_warmups":1,"cudagraph_capture_sizes":[128,120,112,104,96,88,80,72,64,56,48,40,32,24,16,8,4,2,1],"cudagraph_copy_inputs":false,"full_cuda_graph":false,"use_inductor_graph_partition":false,"pass_config":{},"max_capture_size":128,"local_cache_dir":null}
+[36m(TaskRunner pid=2148095)[0m WARNING:2026-02-12 11:02:05,535:Initializing 8 agent loop workers...
+[36m(TaskRunner pid=2148095)[0m WARNING:2026-02-12 11:02:05,535:Per-Agent Loop Worker max concurrency: 128
+[36m(TaskRunner pid=2148095)[0m wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from /home/grads/s/saratb/.netrc.
+[36m(TaskRunner pid=2148095)[0m wandb: Currently logged in as: autummoon (autummoon-t) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+[36m(TaskRunner pid=2148095)[0m wandb: setting up run 03w25wk0
+[36m(TaskRunner pid=2148095)[0m wandb: Tracking run with wandb version 0.24.2
+[36m(TaskRunner pid=2148095)[0m wandb: Run data is saved locally in /mnt/shared-scratch/Shakkottai_S/saratb/verl-tool-lens/wandb/run-20260212_110211-03w25wk0
+[36m(TaskRunner pid=2148095)[0m wandb: Run `wandb offline` to turn off syncing.
+[36m(TaskRunner pid=2148095)[0m wandb: Syncing run torl-fsdp-agent-qwen_qwen2.5-0.5b-instruct-grpo-n16-b8-t1.0-lr1e-6acc-only-4gpu
+[36m(TaskRunner pid=2148095)[0m wandb: ⭐️ View project at https://wandb.ai/autummoon-t/multi-turn-w-tool-0.5b
+[36m(TaskRunner pid=2148095)[0m wandb: 🚀 View run at https://wandb.ai/autummoon-t/multi-turn-w-tool-0.5b/runs/03w25wk0
+[36m(TaskRunner pid=2148095)[0m wandb: Detected [openai] in use.
+[36m(TaskRunner pid=2148095)[0m wandb: Use W&B Weave for improved LLM call tracing. Install Weave with `pip install weave` then add `import weave` to the top of your script.
+[36m(TaskRunner pid=2148095)[0m wandb: For more information, check out the docs at: https://weave-docs.wandb.ai/
+[36m(TaskRunner pid=2148095)[0m Training Progress:   0%|          | 0/256300 [00:00<?, ?it/s]
+[36m(AgentLoopWorker pid=2149977)[0m Agent Worker agent_loop_worker_1 Looping:   0%|          | 0/16 [00:00<?, ?it/s]
+[36m(AgentLoopWorker pid=2149978)[0m You're using a Qwen2TokenizerFast tokenizer. Please note that with a fast tokenizer, using the `__call__` method is faster than using a method to encode the text followed by a call to the `pad` method to get a padded encoding.
+[36m(AgentLoopWorker pid=2149978)[0m ERROR:2026-02-12 11:02:26,179:Attempt 1 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['ec245aa2970844aca2a55b2a442c3980']. Retrying...
+[36m(AgentLoopWorker pid=2149978)[0m ERROR:2026-02-12 11:02:26,406:Attempt 1 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['d3c38e27012a4b46b0de8adbb4f4cbdc']. Retrying...
+[36m(AgentLoopWorker pid=2149973)[0m Agent Worker agent_loop_worker_5 Looping:   0%|          | 0/16 [00:00<?, ?it/s][32m [repeated 7x across cluster][0m
+[36m(AgentLoopWorker pid=2149975)[0m You're using a Qwen2TokenizerFast tokenizer. Please note that with a fast tokenizer, using the `__call__` method is faster than using a method to encode the text followed by a call to the `pad` method to get a padded encoding.[32m [repeated 7x across cluster][0m
+[36m(AgentLoopWorker pid=2149977)[0m ERROR:2026-02-12 11:02:31,188:Attempt 1 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['4e093d20d29549fdb82151ac78a871a5']. Retrying...[32m [repeated 194x across cluster][0m
+[36m(AgentLoopWorker pid=2149977)[0m Agent Worker agent_loop_worker_1 Looping:   6%|▋         | 1/16 [00:12<03:09, 12.65s/it]Agent Worker agent_loop_worker_1 Looping: 100%|██████████| 16/16 [00:12<00:00,  1.26it/s]
+[36m(AgentLoopWorker pid=2149978)[0m ERROR:2026-02-12 11:02:35,178:Attempt 2 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['433b39479c4943bd899fde6e557d08b2']. Retrying...[32m [repeated 60x across cluster][0m
+[36m(compute_reward_async pid=2148436)[0m /mnt/shared-scratch/Shakkottai_S/saratb/verl-tool-lens/.venv/lib/python3.10/site-packages/ray/_private/worker.py:1031: UserWarning: using config and tokenizer with compute_reward_async is deprecated
+[36m(compute_reward_async pid=2148436)[0m   self.core_worker.run_task_loop()
+[36m(AgentLoopWorker pid=2149973)[0m Agent Worker agent_loop_worker_5 Looping:   6%|▋         | 1/16 [00:12<03:09, 12.65s/it]Agent Worker agent_loop_worker_5 Looping: 100%|██████████| 16/16 [00:12<00:00,  1.26it/s][32m [repeated 7x across cluster][0m
+[36m(TaskRunner pid=2148095)[0m Training Progress:   0%|          | 1/256300 [00:33<2380:23:48, 33.44s/it]
+[36m(AgentLoopWorker pid=2149977)[0m Agent Worker agent_loop_worker_1 Looping:   0%|          | 0/16 [00:00<?, ?it/s]
+[36m(AgentLoopWorker pid=2149978)[0m ERROR:2026-02-12 11:02:52,865:Attempt 1 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['88771b639aea46ac9ce07c4d6cf03700']. Retrying...
+[36m(AgentLoopWorker pid=2149978)[0m Agent Worker agent_loop_worker_7 Looping:   6%|▋         | 1/16 [00:00<00:02,  6.53it/s]
+[36m(AgentLoopWorker pid=2149978)[0m ERROR:2026-02-12 11:02:53,521:Attempt 1 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['374fb0add42140fbb24f80856ee2d8b5']. Retrying...
+[36m(AgentLoopWorker pid=2149978)[0m Agent Worker agent_loop_worker_7 Looping:  12%|█▎        | 2/16 [00:00<00:06,  2.23it/s]
+[36m(AgentLoopWorker pid=2149978)[0m ERROR:2026-02-12 11:02:53,867:Attempt 2 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['88771b639aea46ac9ce07c4d6cf03700']. Retrying...
+[36m(AgentLoopWorker pid=2149978)[0m ERROR:2026-02-12 11:02:54,193:Attempt 1 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['760302fc40fc441c87c7e66fc6403012']. Retrying...
+[36m(AgentLoopWorker pid=2149978)[0m Agent Worker agent_loop_worker_7 Looping:  19%|█▉        | 3/16 [00:01<00:07,  1.82it/s]
+[36m(AgentLoopWorker pid=2149980)[0m Agent Worker agent_loop_worker_6 Looping:   6%|▋         | 1/16 [00:02<00:38,  2.57s/it]ERROR:2026-02-12 11:02:55,309:Attempt 1 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['ea04fa0b139d4cc2ba578fa46ddd04d1']. Retrying...
+[36m(AgentLoopWorker pid=2149976)[0m Agent Worker agent_loop_worker_2 Looping: 100%|██████████| 16/16 [00:04<00:00,  3.61it/s]
+[36m(AgentLoopWorker pid=2149973)[0m Agent Worker agent_loop_worker_5 Looping:   0%|          | 0/16 [00:00<?, ?it/s][32m [repeated 7x across cluster][0m
+[36m(AgentLoopWorker pid=2149973)[0m Agent Worker agent_loop_worker_5 Looping:  94%|█████████▍| 15/16 [00:04<00:00,  5.46it/s]ERROR:2026-02-12 11:02:57,779:Attempt 2 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['65b7476dd145455292ce9a78b071b552']. Retrying...
+[36m(AgentLoopWorker pid=2149974)[0m Agent Worker agent_loop_worker_3 Looping: 100%|██████████| 16/16 [00:05<00:00,  5.09it/s]Agent Worker agent_loop_worker_3 Looping: 100%|██████████| 16/16 [00:05<00:00,  3.08it/s]
+[36m(AgentLoopWorker pid=2149974)[0m ERROR:2026-02-12 11:02:57,891:Attempt 1 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['b90a282b8f8b4a48a87dd4f02ffd74ba']. Retrying...[32m [repeated 170x across cluster][0m
+[36m(AgentLoopWorker pid=2149979)[0m Agent Worker agent_loop_worker_0 Looping:  69%|██████▉   | 11/16 [00:05<00:01,  2.94it/s][32m [repeated 43x across cluster][0m
+[36m(AgentLoopWorker pid=2149975)[0m Agent Worker agent_loop_worker_4 Looping:  81%|████████▏ | 13/16 [00:05<00:00,  3.42it/s]ERROR:2026-02-12 11:02:57,858:Attempt 2 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['330278ab5a6a47b5a8eac9e10edd224b']. Retrying...[32m [repeated 20x across cluster][0m
+[36m(TaskRunner pid=2148095)[0m Training Progress:   0%|          | 2/256300 [00:49<1660:28:03, 23.32s/it]
+[36m(AgentLoopWorker pid=2149980)[0m Agent Worker agent_loop_worker_6 Looping: 100%|██████████| 16/16 [00:05<00:00,  2.87it/s][32m [repeated 2x across cluster][0m
+[36m(AgentLoopWorker pid=2149980)[0m Agent Worker agent_loop_worker_6 Looping:  94%|█████████▍| 15/16 [00:05<00:00,  4.25it/s]ERROR:2026-02-12 11:02:58,291:Attempt 1 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['0750147981404f64ae2005e027c67f9a']. Retrying...
+[36m(AgentLoopWorker pid=2149979)[0m Agent Worker agent_loop_worker_0 Looping:  94%|█████████▍| 15/16 [00:08<00:00,  1.78it/s]Agent Worker agent_loop_worker_0 Looping: 100%|██████████| 16/16 [00:08<00:00,  1.99it/s][32m [repeated 5x across cluster][0m
+[36m(AgentLoopWorker pid=2149979)[0m ERROR:2026-02-12 11:03:01,754:Attempt 2 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['421ac437d2f1408499abd760db9c729d']. Retrying...[32m [repeated 59x across cluster][0m
+[36m(AgentLoopWorker pid=2149979)[0m Agent Worker agent_loop_worker_0 Looping:  88%|████████▊ | 14/16 [00:07<00:01,  1.68it/s][32m [repeated 5x across cluster][0m
+[36m(AgentLoopWorker pid=2149977)[0m Agent Worker agent_loop_worker_1 Looping:   0%|          | 0/16 [00:00<?, ?it/s]
+[36m(AgentLoopWorker pid=2149973)[0m Agent Worker agent_loop_worker_5 Looping:   6%|▋         | 1/16 [00:01<00:25,  1.73s/it]ERROR:2026-02-12 11:03:10,694:Attempt 1 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['22da361d37c84b46b47a9c6c4b3cce24']. Retrying...
+[36m(AgentLoopWorker pid=2149974)[0m ERROR:2026-02-12 11:03:12,252:Attempt 2 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['92c41cc4e3be47689856631394a3211a']. Retrying...[32m [repeated 42x across cluster][0m
+[36m(AgentLoopWorker pid=2149973)[0m Agent Worker agent_loop_worker_5 Looping:  44%|████▍     | 7/16 [00:03<00:02,  3.36it/s][32m [repeated 19x across cluster][0m
+[36m(AgentLoopWorker pid=2149976)[0m Agent Worker agent_loop_worker_2 Looping:  94%|█████████▍| 15/16 [00:04<00:00,  4.36it/s]ERROR:2026-02-12 11:03:13,485:Attempt 2 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['f66ef7234a5c46a89bd834400d1c65e2']. Retrying...
+[36m(AgentLoopWorker pid=2149980)[0m Agent Worker agent_loop_worker_6 Looping: 100%|██████████| 16/16 [00:04<00:00,  5.42it/s]Agent Worker agent_loop_worker_6 Looping: 100%|██████████| 16/16 [00:04<00:00,  3.43it/s]
+[36m(AgentLoopWorker pid=2149977)[0m Agent Worker agent_loop_worker_1 Looping:  94%|█████████▍| 15/16 [00:04<00:00,  3.55it/s]
+[36m(AgentLoopWorker pid=2149973)[0m Agent Worker agent_loop_worker_5 Looping:   0%|          | 0/16 [00:00<?, ?it/s][32m [repeated 7x across cluster][0m
+[36m(AgentLoopWorker pid=2149979)[0m Agent Worker agent_loop_worker_0 Looping:  81%|████████▏ | 13/16 [00:05<00:00,  5.10it/s]ERROR:2026-02-12 11:03:14,806:Attempt 1 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['cc6f797ff6fd49539ddbd18e8740d325']. Retrying...[32m [repeated 27x across cluster][0m
+[36m(AgentLoopWorker pid=2149979)[0m ERROR:2026-02-12 11:03:17,720:Attempt 2 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['697c2ad913d74aaebb1bbe4ab4970672']. Retrying...[32m [repeated 184x across cluster][0m
+[36m(AgentLoopWorker pid=2149979)[0m Agent Worker agent_loop_worker_0 Looping:  62%|██████▎   | 10/16 [00:05<00:01,  3.66it/s][32m [repeated 23x across cluster][0m
+[36m(TaskRunner pid=2148095)[0m Training Progress:   0%|          | 3/256300 [01:05<1400:40:02, 19.67s/it]
+[36m(AgentLoopWorker pid=2149978)[0m Agent Worker agent_loop_worker_7 Looping:  94%|█████████▍| 15/16 [00:04<00:00,  5.33it/s]ERROR:2026-02-12 11:03:13,595:Attempt 2 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['f76e4d9a0d394840951f58a840c29b9e']. Retrying...
+[36m(AgentLoopWorker pid=2149979)[0m Agent Worker agent_loop_worker_0 Looping: 100%|██████████| 16/16 [00:07<00:00,  2.13it/s]Agent Worker agent_loop_worker_0 Looping: 100%|██████████| 16/16 [00:07<00:00,  2.06it/s][32m [repeated 6x across cluster][0m
+[36m(AgentLoopWorker pid=2149974)[0m Agent Worker agent_loop_worker_3 Looping:  94%|█████████▍| 15/16 [00:06<00:00,  3.61it/s][32m [repeated 4x across cluster][0m
+[36m(AgentLoopWorker pid=2149977)[0m Agent Worker agent_loop_worker_1 Looping:   0%|          | 0/16 [00:00<?, ?it/s]
+[36m(AgentLoopWorker pid=2149979)[0m ERROR:2026-02-12 11:03:25,660:Attempt 1 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['cbae9e9bdc7948e7b70c2c430565c48c']. Retrying...
+[36m(AgentLoopWorker pid=2149979)[0m Agent Worker agent_loop_worker_0 Looping:   6%|▋         | 1/16 [00:01<00:20,  1.38s/it]
+[36m(AgentLoopWorker pid=2149979)[0m ERROR:2026-02-12 11:03:25,786:Attempt 1 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['95bc7b74dafd4d93b0e5e2695bedeed5']. Retrying...
+[36m(AgentLoopWorker pid=2149979)[0m Agent Worker agent_loop_worker_0 Looping:  12%|█▎        | 2/16 [00:01<00:09,  1.55it/s]ERROR:2026-02-12 11:03:25,858:Attempt 1 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['273f9f9084724fed9e2044b6b63b117d']. Retrying...
+[36m(AgentLoopWorker pid=2149976)[0m Agent Worker agent_loop_worker_2 Looping: 100%|██████████| 16/16 [00:03<00:00,  4.57it/s]Agent Worker agent_loop_worker_2 Looping: 100%|██████████| 16/16 [00:03<00:00,  4.02it/s]
+[36m(AgentLoopWorker pid=2149973)[0m Agent Worker agent_loop_worker_5 Looping:  94%|█████████▍| 15/16 [00:03<00:00,  7.36it/s]
+[36m(AgentLoopWorker pid=2149973)[0m Agent Worker agent_loop_worker_5 Looping:   0%|          | 0/16 [00:00<?, ?it/s][32m [repeated 7x across cluster][0m
+[36m(AgentLoopWorker pid=2149979)[0m Agent Worker agent_loop_worker_0 Looping:  94%|█████████▍| 15/16 [00:05<00:00,  2.78it/s]ERROR:2026-02-12 11:03:29,663:Attempt 1 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['646414c6bf294a968b404a3c7d095c4f']. Retrying...
+[36m(AgentLoopWorker pid=2149979)[0m ERROR:2026-02-12 11:03:30,664:Attempt 2 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['646414c6bf294a968b404a3c7d095c4f']. Retrying...[32m [repeated 225x across cluster][0m
+[36m(AgentLoopWorker pid=2149980)[0m Agent Worker agent_loop_worker_6 Looping:  88%|████████▊ | 14/16 [00:04<00:00,  3.78it/s][32m [repeated 39x across cluster][0m
+[36m(AgentLoopWorker pid=2149975)[0m Agent Worker agent_loop_worker_4 Looping:  81%|████████▏ | 13/16 [00:04<00:00,  4.82it/s]ERROR:2026-02-12 11:03:29,126:Attempt 1 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['5b70288cba934030abac2d42bafe686f']. Retrying...[32m [repeated 26x across cluster][0m
+[36m(TaskRunner pid=2148095)[0m Training Progress:   0%|          | 4/256300 [01:18<1219:35:26, 17.13s/it]
+[36m(AgentLoopWorker pid=2149978)[0m Agent Worker agent_loop_worker_7 Looping: 100%|██████████| 16/16 [00:05<00:00,  4.06it/s]Agent Worker agent_loop_worker_7 Looping: 100%|██████████| 16/16 [00:05<00:00,  3.01it/s][32m [repeated 5x across cluster][0m
+[36m(AgentLoopWorker pid=2149973)[0m Agent Worker agent_loop_worker_5 Looping: 100%|██████████| 16/16 [00:06<00:00,  2.66it/s][32m [repeated 5x across cluster][0m
+[36m(AgentLoopWorker pid=2149973)[0m ERROR:2026-02-12 11:03:31,309:Attempt 2 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['fdad3b4d1917440293b1f31150105028']. Retrying...
+[36m(AgentLoopWorker pid=2149977)[0m Agent Worker agent_loop_worker_1 Looping:   0%|          | 0/16 [00:00<?, ?it/s]
+[36m(AgentLoopWorker pid=2149980)[0m ERROR:2026-02-12 11:03:37,578:Attempt 1 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['5da127ad04dd43c2ae8f5fb564917e98']. Retrying...
+[36m(AgentLoopWorker pid=2149980)[0m Agent Worker agent_loop_worker_6 Looping:   6%|▋         | 1/16 [00:00<00:01,  9.44it/s]
+[36m(AgentLoopWorker pid=2149980)[0m ERROR:2026-02-12 11:03:37,670:Attempt 1 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['ebe5a33325174052b9871372eec471b6']. Retrying...
+[36m(AgentLoopWorker pid=2149980)[0m Agent Worker agent_loop_worker_6 Looping:  25%|██▌       | 4/16 [00:01<00:04,  2.63it/s]ERROR:2026-02-12 11:03:39,087:Attempt 1 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['57dc94d222a04c29aa8d4a8f266976fa']. Retrying...
+[36m(AgentLoopWorker pid=2149980)[0m Agent Worker agent_loop_worker_6 Looping: 100%|██████████| 16/16 [00:03<00:00,  5.15it/s][32m [repeated 2x across cluster][0m
+[36m(AgentLoopWorker pid=2149977)[0m Agent Worker agent_loop_worker_1 Looping:  94%|█████████▍| 15/16 [00:03<00:00,  9.75it/s]ERROR:2026-02-12 11:03:40,980:Attempt 1 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['0c3ce7fd621646f49aef050e6947808a']. Retrying...
+[36m(AgentLoopWorker pid=2149973)[0m Agent Worker agent_loop_worker_5 Looping: 100%|██████████| 16/16 [00:04<00:00,  6.60it/s]Agent Worker agent_loop_worker_5 Looping: 100%|██████████| 16/16 [00:04<00:00,  3.61it/s]
+[36m(AgentLoopWorker pid=2149973)[0m Agent Worker agent_loop_worker_5 Looping:   0%|          | 0/16 [00:00<?, ?it/s][32m [repeated 7x across cluster][0m
+[36m(AgentLoopWorker pid=2149974)[0m ERROR:2026-02-12 11:03:42,630:Attempt 2 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['3def180ed4ff4637931627c77488e8cd']. Retrying...[32m [repeated 190x across cluster][0m
+[36m(AgentLoopWorker pid=2149979)[0m Agent Worker agent_loop_worker_0 Looping:  38%|███▊      | 6/16 [00:04<00:05,  1.79it/s][32m [repeated 44x across cluster][0m
+[36m(AgentLoopWorker pid=2149979)[0m Agent Worker agent_loop_worker_0 Looping:  88%|████████▊ | 14/16 [00:06<00:00,  4.44it/s]ERROR:2026-02-12 11:03:43,815:Attempt 2 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['e940a723793140819b8bf4fd1089bef3']. Retrying...[32m [repeated 24x across cluster][0m
+[36m(AgentLoopWorker pid=2149976)[0m Agent Worker agent_loop_worker_2 Looping: 100%|██████████| 16/16 [00:05<00:00,  3.07it/s][32m [repeated 4x across cluster][0m
+[36m(AgentLoopWorker pid=2149979)[0m Agent Worker agent_loop_worker_0 Looping:  94%|█████████▍| 15/16 [00:06<00:00,  3.04it/s]ERROR:2026-02-12 11:03:44,422:Attempt 2 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['8814ed685ca54d2ab7bb46354412584d']. Retrying...[32m [repeated 4x across cluster][0m
+[36m(AgentLoopWorker pid=2149979)[0m Agent Worker agent_loop_worker_0 Looping: 100%|██████████| 16/16 [00:07<00:00,  2.14it/s]Agent Worker agent_loop_worker_0 Looping: 100%|██████████| 16/16 [00:07<00:00,  2.06it/s][32m [repeated 3x across cluster][0m
+[36m(AgentLoopWorker pid=2149979)[0m Agent Worker agent_loop_worker_0 Looping:   0%|          | 0/1024 [00:00<?, ?it/s]
+[36m(AgentLoopWorker pid=2149979)[0m ERROR:2026-02-12 11:03:46,249:Attempt 2 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['2237ea14c10e407aaf6852cc1fdc05ad']. Retrying...[32m [repeated 34x across cluster][0m
+[36m(AgentLoopWorker pid=2149979)[0m Agent Worker agent_loop_worker_0 Looping:  81%|████████▏ | 13/16 [00:06<00:00,  4.30it/s][32m [repeated 3x across cluster][0m
+[36m(AgentLoopWorker pid=2149977)[0m Agent Worker agent_loop_worker_1 Looping:   0%|          | 0/1024 [00:00<?, ?it/s]
+[36m(AgentLoopWorker pid=2149979)[0m Agent Worker agent_loop_worker_0 Looping:   0%|          | 1/1024 [00:00<14:24,  1.18it/s]ERROR:2026-02-12 11:03:55,722:Attempt 1 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['ed49e6449a6448309841f975a8fdd833']. Retrying...
+[36m(AgentLoopWorker pid=2149979)[0m Agent Worker agent_loop_worker_0 Looping:   1%|          | 7/1024 [00:02<03:55,  4.32it/s]ERROR:2026-02-12 11:03:57,025:Attempt 1 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['5339ab869c7d445d96bccad6a530ed07']. Retrying...
+[36m(AgentLoopWorker pid=2149979)[0m Agent Worker agent_loop_worker_0 Looping:   1%|          | 11/1024 [00:02<02:26,  6.92it/s]ERROR:2026-02-12 11:03:57,383:Attempt 1 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['d650e0d09ff441eba04bda0faf071016']. Retrying...
+[36m(AgentLoopWorker pid=2149977)[0m ERROR:2026-02-12 11:03:59,841:Attempt 1 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['938463c76b3746908b7895d0fa61a92d']. Retrying...[32m [repeated 125x across cluster][0m
+[36m(AgentLoopWorker pid=2149977)[0m Agent Worker agent_loop_worker_1 Looping:   3%|▎         | 27/1024 [00:04<02:07,  7.82it/s][32m [repeated 25x across cluster][0m
+[36m(AgentLoopWorker pid=2149978)[0m Agent Worker agent_loop_worker_7 Looping:   0%|          | 0/1024 [00:00<?, ?it/s][32m [repeated 6x across cluster][0m
+[36m(AgentLoopWorker pid=2149976)[0m Agent Worker agent_loop_worker_2 Looping:   3%|▎         | 27/1024 [00:05<01:36, 10.36it/s]ERROR:2026-02-12 11:04:00,647:Attempt 1 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['e082384787634fa2a654b8cf81965b31']. Retrying...[32m [repeated 23x across cluster][0m
+[36m(AgentLoopWorker pid=2149977)[0m ERROR:2026-02-12 11:04:04,844:Attempt 2 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['153802b5e14b47a99de7fb7d8633de46']. Retrying...[32m [repeated 321x across cluster][0m
+[36m(AgentLoopWorker pid=2149978)[0m Agent Worker agent_loop_worker_7 Looping:   0%|          | 2/1024 [00:09<1:07:57,  3.99s/it][32m [repeated 68x across cluster][0m
+[36m(AgentLoopWorker pid=2149979)[0m Agent Worker agent_loop_worker_0 Looping:   8%|▊         | 87/1024 [00:10<03:35,  4.34it/s]ERROR:2026-02-12 11:04:05,752:Attempt 2 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['3c560799e1f04f61adaf8dcf239c3dc6']. Retrying...[32m [repeated 32x across cluster][0m
+[36m(AgentLoopWorker pid=2149977)[0m ERROR:2026-02-12 11:04:09,917:Attempt 1 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['4e9fa25ce3ec4513ab032318c570b4d0']. Retrying...[32m [repeated 301x across cluster][0m
+[36m(AgentLoopWorker pid=2149977)[0m Agent Worker agent_loop_worker_1 Looping:   8%|▊         | 87/1024 [00:15<03:37,  4.31it/s][32m [repeated 88x across cluster][0m
+[36m(AgentLoopWorker pid=2149976)[0m Agent Worker agent_loop_worker_2 Looping:   7%|▋         | 76/1024 [00:15<02:11,  7.23it/s]ERROR:2026-02-12 11:04:10,735:Attempt 2 failed to connect to tool server: Cannot connect to host 192.168.2.23:30473 ssl:default [Connect call failed ('192.168.2.23', 30473)]. traj_id: ['95da549efa1a429c90ae1c5aaffa9e52']. Retrying...[32m [repeated 45x across cluster][0m
+slurmstepd: error: *** JOB 286726 ON ng13-aphrodite CANCELLED AT 2026-02-12T11:04:13 ***

@@ -64,7 +64,8 @@ echo "action_stop_tokens_file=$action_stop_tokens_file"
 
 # launch tool server
 host=$(hostname -i | awk '{print $1}')
-port=$(shuf -i 30000-31000 -n 1)
+#port=$(shuf -i 30000-31000 -n 1)
+port=5500
 tool_server_url=http://$host:$port/get_observation
 python -m verl_tool.servers.serve --host $host --port $port --tool_type "ipython_code" --workers_per_tool 512 --use_ray=True > logs/tool_server.log &
 server_pid=$!
