@@ -4,24 +4,25 @@ set -x
 source .venv/bin/activate
 
 # GPU settings - use GPU 0,1,2,3
-export CUDA_VISIBLE_DEVICES=2,3,4,5
+#export CUDA_VISIBLE_DEVICES=0,1
 
 # Set WANDB API key for non-interactive login
-export WANDB_API_KEY="b6b5b4b6ca196930f9dd15a5e51d9729a6065109"
+#export WANDB_API_KEY="b6b5b4b6ca196930f9dd15a5e51d9729a6065109"
 
-dataset_name=deepmath_torl # or math_torl_offical to use torl training data
-train_data=$(pwd)/data/${dataset_name}/train.parquet
-val_data=[$(pwd)/data/${dataset_name}/test.parquet,\
-$(pwd)/data/${dataset_name}/math500_test.parquet,\
-$(pwd)/data/${dataset_name}/aime24_test.parquet,\
-$(pwd)/data/${dataset_name}/aime25_test.parquet]
+PROJECT_ROOT="/mnt/shared-scratch/Shakkottai_S/saratb/verl-tool-lens"
+dataset_name=deepmath_no_system_prompt # or math_torl_offical to use torl training data
+train_data=$PROJECT_ROOT/data/${dataset_name}/train.parquet
+val_data=[$PROJECT_ROOT/data/${dataset_name}/test.parquet,\
+$PROJECT_ROOT/data/${dataset_name}/math500_test.parquet,\
+$PROJECT_ROOT/data/${dataset_name}/aime24_test.parquet,\
+$PROJECT_ROOT/data/${dataset_name}/aime25_test.parquet]
 model_name=Qwen/Qwen2.5-Math-1.5B
 rl_alg=grpo # gae(ppo) or grpo, if grpo, then better set n>1 otherwise the group norm can not be effective
 n_gpus_per_node=4  # Using 6 GPUs: 0,1,2,3,4,5
 n_nodes=1
 n=16
-batch_size=128
-ppo_mini_batch_size=128
+batch_size=8
+ppo_mini_batch_size=8
 max_prompt_length=1024
 max_response_length=3072
 max_obs_length=512
@@ -37,7 +38,7 @@ entropy_coeff=0
 kl_loss_type=low_var_kl
 lr=1e-6
 reward_manager=torl
-wandb_project=creditsummary  # wandb project name, change this to your desired project name
+wandb_project=hrl_a  # wandb project name, change this to your desired project name
 ppo_micro_batch_size_per_gpu=1
 log_prob_micro_batch_size_per_gpu=8
 tensor_model_parallel_size=1
@@ -61,6 +62,9 @@ export VERL_RUN_ID=$run_name
 export NCCL_DEBUG=WARN
 export VLLM_USE_V1=1
 rollout_mode='async'
+unset ROCR_VISIBLE_DEVICES HIP_VISIBLE_DEVICES
+export CUDA_VISIBLE_DEVICES=0,1,2,3
+echo $ROCR_VISIBLE_DEVICES  # should be empty
 
 # temp file for action tokens as verl cannot pass special strs as params
 action_stop_tokens_file="$(pwd)$(mktemp)"
@@ -89,6 +93,7 @@ PYTHONUNBUFFERED=1 python3 -m verl_tool.trainer.main_ppo \
     reward_model.launch_reward_fn_async=True \
     actor_rollout_ref.model.path=$model_name \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \
+    actor_rollout_ref.nccl_timeout=3600 \
     actor_rollout_ref.actor.optim.lr=$lr \
     actor_rollout_ref.actor.optim.lr_warmup_steps=10 \
     actor_rollout_ref.model.use_remove_padding=True \
@@ -154,10 +159,10 @@ PYTHONUNBUFFERED=1 python3 -m verl_tool.trainer.main_ppo \
     trainer.validation_data_dir=null \
     trainer.n_gpus_per_node=$n_gpus_per_node \
     trainer.nnodes=$n_nodes \
-    +trainer.remove_previous_ckpt_in_save=True \
-    trainer.save_freq=10 \
-    trainer.test_freq=10 \
-    trainer.total_epochs=10
+    +trainer.remove_previous_ckpt_in_save=False \
+    trainer.save_freq=5 \
+    trainer.test_freq=5 \
+    trainer.total_epochs=20
 
 
 pkill -P -9 $server_pid

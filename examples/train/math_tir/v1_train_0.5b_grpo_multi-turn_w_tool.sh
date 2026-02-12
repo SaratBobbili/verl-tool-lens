@@ -16,7 +16,7 @@ val_data=[$PROJECT_ROOT/data/${dataset_name}/test.parquet,\
 $PROJECT_ROOT/data/${dataset_name}/math500_test.parquet,\
 $PROJECT_ROOT/data/${dataset_name}/aime24_test.parquet,\
 $PROJECT_ROOT/data/${dataset_name}/aime25_test.parquet]
-model_name=Qwen/Qwen2.5-Math-1.5B
+model_name=Qwen/Qwen2.5-Coder-0.5B-Instruct
 rl_alg=grpo # gae(ppo) or grpo, if grpo, then better set n>1 otherwise the group norm can not be effective
 n_gpus_per_node=4  # Using 6 GPUs: 0,1,2,3,4,5
 n_nodes=1
@@ -38,7 +38,7 @@ entropy_coeff=0
 kl_loss_type=low_var_kl
 lr=1e-6
 reward_manager=torl
-wandb_project=multi-turn-w-tool  # wandb project name, change this to your desired project name
+wandb_project=multi-turn-w-tool-0.5b  # wandb project name, change this to your desired project name
 ppo_micro_batch_size_per_gpu=1
 log_prob_micro_batch_size_per_gpu=8
 tensor_model_parallel_size=1
@@ -159,9 +159,9 @@ PYTHONUNBUFFERED=1 python3 -m verl_tool.trainer.main_ppo \
     trainer.n_gpus_per_node=$n_gpus_per_node \
     trainer.nnodes=$n_nodes \
     +trainer.remove_previous_ckpt_in_save=False \
-    trainer.save_freq=10 \
-    trainer.test_freq=10 \
-    trainer.total_epochs=10
+    trainer.save_freq=5 \
+    trainer.test_freq=5 \
+    trainer.total_epochs=20
 
 
 pkill -P -9 $server_pid

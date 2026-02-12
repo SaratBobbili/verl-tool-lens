@@ -42,7 +42,7 @@ def apply_system_prompt(sys_prompt_style:str, question:str):
         list: A list of dictionaries representing the conversation with the system prompt applied.
     """
     if sys_prompt_style == 'simple_rl':
-        return [{'role': 'user', 'content': question + '\n' + simple_rl_system_prompt}]
+        return [{'role': 'system', 'content': simple_rl_system_prompt}, {'role': 'user', 'content': question}]
     elif sys_prompt_style == 'torl':
         return [{'role': 'system', 'content': torl_system_prompt}, {'role': 'user', 'content': question}]
     else:

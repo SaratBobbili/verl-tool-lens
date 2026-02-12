@@ -16,7 +16,7 @@ val_data=[$PROJECT_ROOT/data/${dataset_name}/test.parquet,\
 $PROJECT_ROOT/data/${dataset_name}/math500_test.parquet,\
 $PROJECT_ROOT/data/${dataset_name}/aime24_test.parquet,\
 $PROJECT_ROOT/data/${dataset_name}/aime25_test.parquet]
-model_name=Qwen/Qwen2.5-Math-1.5B
+model_name=Qwen/Qwen2.5-Coder-7B-Instruct
 rl_alg=grpo # gae(ppo) or grpo, if grpo, then better set n>1 otherwise the group norm can not be effective
 n_gpus_per_node=4  # Using 6 GPUs: 0,1,2,3,4,5
 n_nodes=1
@@ -159,9 +159,9 @@ PYTHONUNBUFFERED=1 python3 -m verl_tool.trainer.main_ppo \
     trainer.n_gpus_per_node=$n_gpus_per_node \
     trainer.nnodes=$n_nodes \
     +trainer.remove_previous_ckpt_in_save=False \
-    trainer.save_freq=10 \
-    trainer.test_freq=10 \
-    trainer.total_epochs=10
+    trainer.save_freq=5 \
+    trainer.test_freq=5 \
+    trainer.total_epochs=20
 
 
 pkill -P -9 $server_pid
