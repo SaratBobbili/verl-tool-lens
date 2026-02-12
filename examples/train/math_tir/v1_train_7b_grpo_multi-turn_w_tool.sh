@@ -10,12 +10,11 @@ source .venv/bin/activate
 #export WANDB_API_KEY="b6b5b4b6ca196930f9dd15a5e51d9729a6065109"
 
 dataset_name=deepmath_torl # or math_torl_offical to use torl training data
-PROJECT_ROOT="/mnt/shared-scratch/Shakkottai_S/saratb/verl-tool-lens"
-train_data=$PROJECT_ROOT/data/${dataset_name}/train.parquet
-val_data=[$PROJECT_ROOT/data/${dataset_name}/test.parquet,\
-$PROJECT_ROOT/data/${dataset_name}/math500_test.parquet,\
-$PROJECT_ROOT/data/${dataset_name}/aime24_test.parquet,\
-$PROJECT_ROOT/data/${dataset_name}/aime25_test.parquet]
+train_data=$(pwd)/data/${dataset_name}/train.parquet
+val_data=[$(pwd)/data/${dataset_name}/test.parquet,\
+$(pwd)/data/${dataset_name}/math500_test.parquet,\
+$(pwd)/data/${dataset_name}/aime24_test.parquet,\
+$(pwd)/data/${dataset_name}/aime25_test.parquet]
 model_name=Qwen/Qwen2.5-Coder-7B-Instruct
 rl_alg=grpo # gae(ppo) or grpo, if grpo, then better set n>1 otherwise the group norm can not be effective
 n_gpus_per_node=4  # Using 6 GPUs: 0,1,2,3,4,5

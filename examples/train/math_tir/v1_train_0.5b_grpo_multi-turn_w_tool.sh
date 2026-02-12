@@ -10,15 +10,14 @@ source .venv/bin/activate
 #export WANDB_API_KEY="b6b5b4b6ca196930f9dd15a5e51d9729a6065109"
 
 dataset_name=deepmath_torl # or math_torl_offical to use torl training data
-PROJECT_ROOT="/mnt/shared-scratch/Shakkottai_S/saratb/verl-tool-lens"
-train_data=$PROJECT_ROOT/data/${dataset_name}/train.parquet
-val_data=[$PROJECT_ROOT/data/${dataset_name}/test.parquet,\
-$PROJECT_ROOT/data/${dataset_name}/math500_test.parquet,\
-$PROJECT_ROOT/data/${dataset_name}/aime24_test.parquet,\
-$PROJECT_ROOT/data/${dataset_name}/aime25_test.parquet]
-model_name=Qwen/Qwen2.5-Coder-0.5B-Instruct
+train_data=$(pwd)/data/${dataset_name}/train.parquet
+val_data=[$(pwd)/data/${dataset_name}/test.parquet,\
+$(pwd)/data/${dataset_name}/math500_test.parquet,\
+$(pwd)/data/${dataset_name}/aime24_test.parquet,\
+$(pwd)/data/${dataset_name}/aime25_test.parquet]
+model_name=Qwen/Qwen2.5-0.5B-Instruct
 rl_alg=grpo # gae(ppo) or grpo, if grpo, then better set n>1 otherwise the group norm can not be effective
-n_gpus_per_node=4  # Using 6 GPUs: 0,1,2,3,4,5
+n_gpus_per_node=2  # Using 6 GPUs: 0,1,2,3,4,5
 n_nodes=1
 n=16
 batch_size=8
@@ -63,7 +62,7 @@ export NCCL_DEBUG=WARN
 export VLLM_USE_V1=1
 rollout_mode='async'
 unset ROCR_VISIBLE_DEVICES HIP_VISIBLE_DEVICES
-export CUDA_VISIBLE_DEVICES=0,1,2,3
+export CUDA_VISIBLE_DEVICES=0,1
 echo $ROCR_VISIBLE_DEVICES  # should be empty
 
 # temp file for action tokens as verl cannot pass special strs as params
@@ -134,7 +133,7 @@ PYTHONUNBUFFERED=1 python3 -m verl_tool.trainer.main_ppo \
     actor_rollout_ref.rollout.top_k=-1 \
     actor_rollout_ref.rollout.n=$n \
     actor_rollout_ref.rollout.log_prob_use_dynamic_bsz=$use_dynamic_bsz \
-    actor_rollout_ref.rollout.max_num_seqs=512 \
+    actor_rollout_ref.rollout.max_num_seqs=64 \
     actor_rollout_ref.rollout.mode=$rollout_mode \
     actor_rollout_ref.rollout.val_kwargs.n=8 \
     actor_rollout_ref.rollout.val_kwargs.temperature=$temperature \
