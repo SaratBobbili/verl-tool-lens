@@ -48,10 +48,10 @@ ulysses_sequence_parallel_size=1 # set to 1 for normal verl behavior, otherwise 
 fsdp_size=-1
 additional_eos_token_ids=[151645] # <|im_end|> token id
 mask_observations=True # mask observations for kl loss and gradient descent
-enable_mtrl=True # enable multi-turn training
+enable_mtrl=False # enable multi-turn training
 max_action_length=2048
 model_pretty_name=$(echo $model_name | tr '/' '_' | tr '[:upper:]' '[:lower:]')
-run_name_postfix="acc-only-4gpu"
+run_name_postfix="enable_mtrl-${enable_mtrl}"
 if [ "$enable_agent" = "True" ]; then
     run_name="${reward_manager}-${strategy}-agent-${model_pretty_name}-${rl_alg}-n${n}-b${batch_size}-t${temperature}-lr${lr}${run_name_postfix}"
 else
@@ -76,7 +76,7 @@ host=$(hostname -i | awk '{print $1}')
 port=5500
 uvi_workers=16
 tool_server_url=http://$host:$port/get_observation
-python -m verl_tool.servers.serve --host $host --port $port --tool_type "ipython_code" --workers_per_tool 8 --use_ray=True --uvi_workers=$uvi_workers > logs/tool_server.log &
+python -m verl_tool.servers.serve --host $host --port $port --tool_type "ipython_code" --workers_per_tool 8 --use_ray=True --uvi_workers=$uvi_workers  > logs/tool_server.log &
 server_pid=$!
 
 echo "Server (pid=$server_pid) started at $tool_server_url"
@@ -135,7 +135,7 @@ PYTHONUNBUFFERED=1 python3 -m verl_tool.trainer.main_ppo \
     actor_rollout_ref.rollout.top_k=-1 \
     actor_rollout_ref.rollout.n=$n \
     actor_rollout_ref.rollout.log_prob_use_dynamic_bsz=$use_dynamic_bsz \
-    actor_rollout_ref.rollout.max_num_seqs=64 \
+    actor_rollout_ref.rollout.max_num_seqs=512 \
     actor_rollout_ref.rollout.mode=$rollout_mode \
     actor_rollout_ref.rollout.val_kwargs.n=8 \
     actor_rollout_ref.rollout.val_kwargs.temperature=$temperature \

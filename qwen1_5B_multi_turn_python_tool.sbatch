@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -J 0_5b_Instruct
+#SBATCH -J 1_5b_nonInst
 #SBATCH -p gpu-research
 #SBATCH --qos=olympus-research-gpu
 #SBATCH --gres=gpu:a100:2
@@ -16,5 +16,5 @@ echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}"
 # module load cuda/12.1
 # source ~/.bashrc && conda activate verl-tool-env
 
-bash examples/train/math_tir/v1_train_0.5b_grpo_multi-turn_w_tool.sh
+bash examples/train/math_tir/v1_train_1.5b_grpo_multi-turn_w_tool.sh
 
