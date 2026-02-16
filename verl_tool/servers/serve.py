@@ -558,7 +558,7 @@ def main(
     host: str = "0.0.0.0",
     port: int = 5000,
     workers_per_tool: int = 32,
-    max_concurrent_requests: int = 1024,
+    max_concurrent_requests: int = 4096,
     request_timeout: Optional[float] = None,
     thread_pool_size: Optional[int] = None,
     use_tqdm: bool = False,
@@ -567,7 +567,7 @@ def main(
     use_ray: bool = False,
     enable_hashing: bool = True,
     log_interval: int = 30,
-    uvi_workers: int = 1,
+    uvi_workers: int = 32,
     router_workers: int = 1,
     log_directory: Optional[str] = None,
 ):
