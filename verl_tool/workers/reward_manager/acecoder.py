@@ -19,6 +19,7 @@ from functools import partial
 from collections import defaultdict
 import time
 import torch
+import signal
 
 from verl import DataProto
 from .reward_score import _default_compute_score
@@ -120,7 +121,7 @@ class AceCoderRewardManager:
         self.num_examine = num_examine  # the number of batches of decoded responses to print to the console
         self.compute_score = compute_score or _default_compute_score
         self.step_idx = None
-        self.n_workers = 64
+        self.n_workers = 1
         self.binary = True
         self.parse_code_mode = "last" # "all", "first", "last"
         self.add_format_think_penalty = False # -0.5 if not begines with <think> and end with </think>
@@ -130,20 +131,21 @@ class AceCoderRewardManager:
         self.add_no_tool_interact_penalty = False # -1.0 if the traj's num turn is 0, no interaction at all
         self.add_code_exec_penalty = False # -0.25 if the execution has an error.
         self.reward_fn_key = reward_fn_key
+        self.record_dir = Path("/home/codeGen_curriculum/verl_step_records/acecoder_records")
+        self.record_dir.mkdir(parents=True, exist_ok=True)
 
         try:
             from acecoder import evaluate_test_cases
         except ImportError:
             raise ImportError("`from acecoder import evaluate_test_cases` failed, please install acecoder to use test_case rule")
-        
+
     def get_acecoder_data_score(self, data: DataProto, response_str, prompt_str, extracted_answers, test_cases):
         scores = [{} for _ in range(len(data))]
         data_sources = data.non_tensor_batch['data_source']
-        # 1. Testing code on the test cases
+
         question_hashes = [hash_string(question) for question in prompt_str]
-        # ensure the length of lists are of the same, avoid Ray error
         assert len(response_str) == len(test_cases) == len(data_sources)
-        # before perform batched scoring: dump the statistics of the list of responses
+
         samples = [
             {
                 'task_id': question_hash,
@@ -153,58 +155,158 @@ class AceCoderRewardManager:
                 'tests': list(test_case),
                 '_identifier': f"{question_hash}_{i}"
             }
-            for i, (question_hash, question, answer, test_case, response) in enumerate(zip(question_hashes, prompt_str, extracted_answers, test_cases, response_str))
+            for i, (question_hash, question, answer, test_case, response)
+            in enumerate(zip(question_hashes, prompt_str, extracted_answers, test_cases, response_str))
         ]
-        # save the dumped samples to a file
-        temp_file = self.record_dir / f"step-{self.step_idx}_{hash_string(''.join(question_hashes))}.jsonl"
+
+        temp_file = self.record_dir / f"step-{self.step_idx}_{hash_string(''.join(question_hashes))}_{len(response_str[0])}_{time.time_ns()}.jsonl"
         with open(temp_file, "w") as f:
             for sample in samples:
                 f.write(json.dumps(sample) + "\n")
-        # perform batched scoring for coding score: call the acecoder evaluation script to retrieve the coder part scores
-        output_file = Path(temp_file).with_suffix(f".eval_results_binary.jsonl").absolute()
-        command = f"python -m acecoder.eval_test_cases --samples {temp_file} --n_workers {self.n_workers} \
-            --extract_solution True --output_file {output_file} --test_details True \
-            --i_just_wanna_run True --min_time_limit 1 --gt_time_limit_factor 1"
+
+        output_file = Path(temp_file).with_suffix(".eval_results_binary.jsonl").absolute()
+
+        # Store logs next to outputs for post-mortem debugging.
+        log_file = Path(str(output_file) + ".log")
+
+        # Build argv list (NO shell=True)
+        argv = [
+            "python", "-m", "acecoder.eval_test_cases",
+            "--samples", str(temp_file),
+            "--n_workers", str(self.n_workers),
+            "--extract_solution", "True",
+            "--output_file", str(output_file),
+            "--test_details", "True",
+            "--i_just_wanna_run", "True",
+            "--min_time_limit", "1",
+            "--gt_time_limit_factor", "1",
+        ]
+
+        # Choose a timeout. Prefer a config on self, else a reasonable default.
+        # You can tune this. The important part is: it must exist.
+        timeout_s = getattr(self, "acecoder_timeout_s", None)
+        if timeout_s is None:
+            # Heuristic: base + per-sample. Adjust to your workload.
+            timeout_s = 30 + 5 * len(samples)
+
         start = time.time()
-        subprocess.run(command, shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
-        end = time.time()
-        print(f"Step {self.step_idx}: acecoder evaluation script took {end - start:.2f} seconds for {len(samples)} samples.")
-        # the script will dump the results into the output_file, read it and parse it as a list
+        rc = None
+        timed_out = False
+
+        # Open logs in append mode so repeated runs don't lose context.
+        with open(log_file, "ab", buffering=0) as lf:
+            lf.write(
+                (f"\n=== step={self.step_idx} start={time.strftime('%Y-%m-%d %H:%M:%S')} "
+                f"samples={len(samples)} timeout_s={timeout_s} ===\n"
+                f"CMD: {' '.join(argv)}\n").encode()
+            )
+
+            # Start subprocess in its own process group so we can kill all descendants.
+            # preexec_fn=os.setsid works on Linux.
+            proc = subprocess.Popen(
+                argv,
+                stdout=lf,
+                stderr=lf,
+                preexec_fn=os.setsid,
+                cwd=None,
+                env=os.environ.copy(),
+            )
+
+            try:
+                rc = proc.wait(timeout=timeout_s)
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                lf.write(f"\n[TIMEOUT] Exceeded {timeout_s}s. Killing process group...\n".encode())
+
+                # Kill the whole process group.
+                try:
+                    os.killpg(proc.pid, signal.SIGTERM)
+                except Exception as e:
+                    lf.write(f"[WARN] SIGTERM killpg failed: {e}\n".encode())
+
+                # Give it a moment to die gracefully, then SIGKILL.
+                try:
+                    rc = proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except Exception as e:
+                        lf.write(f"[WARN] SIGKILL killpg failed: {e}\n".encode())
+                    rc = proc.wait(timeout=5)
+            except Exception as e:
+                # Any other unexpected error: ensure process group is cleaned up.
+                lf.write(f"\n[ERROR] Exception while waiting: {e}\n".encode())
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except Exception:
+                    pass
+                raise
+            finally:
+                end = time.time()
+                lf.write(f"=== end rc={rc} elapsed={end-start:.2f}s timed_out={timed_out} ===\n".encode())
+
+        print(f"Step {self.step_idx}: acecoder evaluation script took {time.time() - start:.2f} seconds for {len(samples)} samples. rc={rc} timeout={timed_out}")
+
+        # If timed out or failed, return a safe fallback score and keep logs for inspection.
+        if timed_out or rc != 0 or not output_file.exists():
+            # Conservative fallback: treat as failure. (You can choose neutral instead.)
+            for i in range(len(scores)):
+                scores[i]['pass_rate'] = 0.0
+                scores[i]['binary_pass_rate'] = 0.0
+                scores[i]['score'] = -1.0 if getattr(self, "binary", False) else 0.0
+                scores[i]['acecoder_error'] = "timeout" if timed_out else f"rc={rc}"
+                scores[i]['acecoder_log'] = str(log_file)
+            # Cleanup temp input to avoid disk bloat; keep output/log for debugging.
+            try:
+                os.remove(temp_file)
+            except Exception:
+                pass
+            return scores
+
+        # Parse output file
         with open(output_file, "r") as f:
             all_samples_results = [json.loads(x) for x in f]
+
         pass_rates = [x['eval_results']['pass_rate'] for x in all_samples_results]
-        # print the error statistics
-        # syntax error
         code_error = [x['eval_results']['code_error'] for x in all_samples_results]
-        # remove the temp_file and output_file after finish code pass rate computation and result extraction
-        test_case_error = [[x['eval_results']['details'][i]['reason'] for i in range(len(x['eval_results']['details']))] for x in all_samples_results]
+        test_case_error = [
+            [x['eval_results']['details'][i]['reason'] for i in range(len(x['eval_results']['details']))]
+            for x in all_samples_results
+        ]
+
         print(f"Step {self.step_idx}: acecoder evaluation script error statistics for {len(samples)} samples.")
-        num_empty = sum([1 for code in extracted_answers if code.strip(' \n') == ''])
-        print(f" - Empty code: {num_empty} ({num_empty / len(extracted_answers) * 100:.2f}%)")
-        print(f" - Syntax error: {sum([1 for x in code_error if x])} ({len([x for x in code_error if x]) / len(code_error) * 100:.2f}%)")
-        print(" - Test case error:")    
+        num_empty = sum(1 for code in extracted_answers if code.strip(' \n') == '')
+        if len(extracted_answers) > 0:
+            print(f" - Empty code: {num_empty} ({num_empty / len(extracted_answers) * 100:.2f}%)")
+        if len(code_error) > 0:
+            print(f" - Syntax error: {sum(1 for x in code_error if x)} ({len([x for x in code_error if x]) / len(code_error) * 100:.2f}%)")
+        print(" - Test case error:")
         counter = Counter()
-        for i in range(len(test_case_error)):
-            if test_case_error[i]:
-                counter.update(test_case_error[i])
-        for k, v in counter.items():
-            print(f"   - {k}: {v} ({v / len(test_case_error) * 100:.2f}%)")
-        # print the pass rate statistics
+        for errs in test_case_error:
+            if errs:
+                counter.update(errs)
+        if len(test_case_error) > 0:
+            for k, v in counter.items():
+                print(f"   - {k}: {v} ({v / len(test_case_error) * 100:.2f}%)")
+
+        # Cleanup. Keep log_file by default (it’s valuable); remove if you prefer.
         try:
             os.remove(temp_file)
             os.remove(output_file)
-        except:
+            os.remove(log_file)  # uncomment if you want logs removed on success
+        except Exception:
             pass
-        
+
         for i in range(len(scores)):
             scores[i]['pass_rate'] = pass_rates[i]
             scores[i]['binary_pass_rate'] = 1.0 if pass_rates[i] == 1.0 else 0.0
-            if self.binary:
-                scores[i]['score'] = 1.0 if pass_rates[i] == 1.0 else -1.0 # -1.0 for failed test cases
+            if getattr(self, "binary", False):
+                scores[i]['score'] = 1.0 if pass_rates[i] == 1.0 else -1.0
             else:
                 scores[i]['score'] = pass_rates[i]
+
         return scores
-    
+
     def get_prime_code_data_score(self, data: DataProto, response_str, prompt_str, extracted_answers, test_cases):
         scores = [{} for _ in range(len(data))]
         data_sources = data.non_tensor_batch['data_source']
@@ -220,7 +322,7 @@ class AceCoderRewardManager:
                 ground_truth,
                 data_sources,
                 extra_info=extra_info,
-                num_processes=64,
+                num_processes=self.n_workers,
             )
         ) # list of 1.0 or 0.0
         for i in range(len(scores)):
