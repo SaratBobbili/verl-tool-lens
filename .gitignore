@@ -319,3 +319,8 @@ verl_step_records/
 /ray-logs
 /models
 /sft_models
+
+# Slurm / job output files
+*.err
+*.out
+*.sbatch
