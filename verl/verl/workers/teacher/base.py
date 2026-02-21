@@ -30,8 +30,8 @@ class BaseTeacher(ABC):
         self.config = config
 
     @abstractmethod
-    def compute_values(self, data: DataProto) -> torch.Tensor:
-        """Compute values"""
+    def compute_scores(self, data: DataProto) -> torch.Tensor:
+        """Compute scores (i.e. probability of success)"""
         pass
 
     @abstractmethod

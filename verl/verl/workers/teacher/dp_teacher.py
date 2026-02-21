@@ -19,7 +19,7 @@ import logging
 import os
 
 import torch
-import torch.distributed
+import torch.distributed as dist
 from torch import nn, optim
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 
@@ -27,13 +27,15 @@ from verl import DataProto
 from verl.trainer.ppo import core_algos
 from verl.utils.attention_utils import index_first_axis, pad_input, rearrange, unpad_input
 from verl.utils.device import get_device_id, get_device_name
-from verl.utils.fsdp_utils import FSDPModule, fsdp2_clip_grad_norm_
+from verl.utils.fsdp_utils import FSDPModule, fsdp2_clip_grad_norm_, get_fsdp_full_state_dict, fsdp_version
 from verl.utils.profiler import GPUMemoryLogger
 from verl.utils.py_functional import append_to_dict
 from verl.utils.seqlen_balancing import prepare_dynamic_batch, restore_dynamic_batch
 from verl.utils.torch_functional import masked_mean
 from verl.utils.ulysses import gather_outputs_and_unpad, ulysses_pad_and_slice_inputs
 from verl.workers.teacher import BaseTeacher
+
+# import time, json
 
 logger = logging.getLogger(__file__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
@@ -50,12 +52,14 @@ class DataParallelTeacher(BaseTeacher):
         self.ulysses_sequence_parallel_size = self.config.get("ulysses_sequence_parallel_size", 1)
         self.device_name = get_device_name()
 
+        # version bookkeeping (currently only available with the AI-generated save/load below)
+        self.version = 0
+
     def _forward_micro_batch(self, micro_batch):
         response_length = micro_batch["responses"].size(-1)
         multi_modal_inputs = {}
         if "multi_modal_inputs" in micro_batch.keys():
             from verl.utils.model import extract_multi_modal_inputs
-
             multi_modal_inputs = extract_multi_modal_inputs(micro_batch["multi_modal_inputs"])
 
         with torch.autocast(device_type=self.device_name, dtype=torch.bfloat16):
@@ -101,20 +105,20 @@ class DataParallelTeacher(BaseTeacher):
 
                 if hasattr(self.teacher_module, "v_head"):
                     # For trl.AutoModelForCausalLMWithValueHead
-                    values_rmpad = output[2].squeeze(0).unsqueeze(-1)
+                    scores_rmpad = output[2].squeeze(0).unsqueeze(-1)
                 else:
-                    values_rmpad = output.logits
-                    values_rmpad = values_rmpad.squeeze(0)  # (total_nnz)
+                    scores_rmpad = output.logits
+                    scores_rmpad = scores_rmpad.squeeze(0)  # (total_nnz)
 
                 # gather output if sp > 1
                 if self.ulysses_sequence_parallel_size > 1:
-                    values_rmpad = gather_outputs_and_unpad(
-                        values_rmpad, gather_dim=0, unpad_dim=0, padding_size=pad_size
+                    scores_rmpad = gather_outputs_and_unpad(
+                        scores_rmpad, gather_dim=0, unpad_dim=0, padding_size=pad_size
                     )
 
                 # pad it back
-                values = pad_input(values_rmpad, indices=indices, batch=batch, seqlen=seqlen).squeeze(-1)
-                values = values[:, -response_length - 1 : -1]
+                scores = pad_input(scores_rmpad, indices=indices, batch=batch, seqlen=seqlen).squeeze(-1)
+                scores = scores[:, -response_length - 1 : -1]
             else:
                 output = self.teacher_module(
                     input_ids=input_ids,
@@ -125,14 +129,15 @@ class DataParallelTeacher(BaseTeacher):
                 )  # prevent model thinks we are generating
                 if hasattr(self.teacher_module, "v_head"):
                     # For trl.AutoModelForCausalLMWithValueHead
-                    values = output[2]
+                    scores = output[2]
                 else:
-                    values = output.logits
-                values = values[:, -response_length - 1 : -1].squeeze(-1)
-            return values
+                    scores = output.logits
+                scores = scores[:, -response_length - 1 : -1].squeeze(-1)
+            return scores
 
     def _optimizer_step(self):
         assert self.config.grad_clip is not None
+        assert self.teacher_optimizer is not None, "Teacher optimizer is None; did you init in inference-only mode?"
 
         if isinstance(self.teacher_module, FSDP):
             grad_norm = self.teacher_module.clip_grad_norm_(self.config.grad_clip)
@@ -150,7 +155,7 @@ class DataParallelTeacher(BaseTeacher):
         return grad_norm
 
     @GPUMemoryLogger(role="dp teacher", logger=logger)
-    def compute_values(self, data: DataProto) -> torch.Tensor:
+    def compute_scores(self, data: DataProto) -> torch.Tensor:
         self.teacher_module.eval()
         micro_batch_size = data.meta_info["micro_batch_size"]
         use_dynamic_bsz = data.meta_info["use_dynamic_bsz"]
@@ -170,31 +175,40 @@ class DataParallelTeacher(BaseTeacher):
         else:
             micro_batches = data.split(micro_batch_size)
 
-        values_lst = []
+        scores_lst = []
         for micro_batch in micro_batches:
             micro_batch = micro_batch.to(get_device_id())
             model_inputs = {**micro_batch.batch, **micro_batch.non_tensor_batch}
             with torch.no_grad():
-                values = self._forward_micro_batch(model_inputs)
-            values_lst.append(values)
-        values = torch.concat(values_lst, dim=0)
+                scores = self._forward_micro_batch(model_inputs)
+            scores_lst.append(scores)
+        scores = torch.concat(scores_lst, dim=0)
 
         if use_dynamic_bsz:
-            values = restore_dynamic_batch(values, batch_idx_list)
-
+            scores = restore_dynamic_batch(scores, batch_idx_list)
+        # TODO: response_mask will never be an issue for the teacher since it only uses prompts
         if "response_mask" in data.batch:
             response_mask = data.batch["response_mask"]
-            response_mask = response_mask.to(values.device)
-            values = values * response_mask  # Only action tokens have values
-        return values
+            response_mask = response_mask.to(scores.device)
+            scores = scores * response_mask  # Only action tokens have scores
+        
+        # # Taking only the last non-padding response token (TODO: not working)
+        # if scores.dim() == 2:
+        #     attn = data.batch["attention_mask"].to(scores.device)
+        #     idx = attn.long().sum(dim=1) - 1
+        #     idx = idx.clamp(min=0)
+        #     scores = scores[torch.arange(scores.size(0), device=scores.device), idx]  # [B]
+
+        return scores
 
     @GPUMemoryLogger(role="dp teacher", logger=logger)
     def update_teacher(self, data: DataProto):
+        assert self.teacher_optimizer is not None, "Teacher optimizer is None; this DP teacher is inference-only."
         # make sure we are in training mode
         self.teacher_module.train()
         metrics = {}
 
-        select_keys = ["input_ids", "responses", "response_mask", "attention_mask", "position_ids", "values", "returns"]
+        select_keys = ["input_ids", "responses", "response_mask", "attention_mask", "position_ids", "scores", "returns"]
         has_multi_modal_inputs = "multi_modal_inputs" in data.non_tensor_batch.keys()
         non_tensor_select_keys = ["multi_modal_inputs"] if has_multi_modal_inputs else []
 
@@ -222,13 +236,14 @@ class DataParallelTeacher(BaseTeacher):
                     micro_batch_metrics = {}
                     model_inputs = {**micro_batch.batch, **micro_batch.non_tensor_batch}
                     response_mask = model_inputs["response_mask"]
-                    values = model_inputs["values"]
+                    scores = model_inputs["scores"]
                     returns = model_inputs["returns"]
 
                     vpreds = self._forward_micro_batch(model_inputs)
+                    # TODO: Replace this with regression loss
                     vf_loss, vf_clipfrac = core_algos.compute_value_loss(
                         vpreds=vpreds,
-                        values=values,
+                        values=scores,
                         returns=returns,
                         response_mask=response_mask,
                         cliprange_value=self.config.cliprange_value,

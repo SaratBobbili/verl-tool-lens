@@ -1920,7 +1920,7 @@ class TeacherWorker(Worker, DistProfilerExtension):
 
     @register(dispatch_mode=make_nd_compute_dataproto_dispatch_fn(mesh_name="teacher"))
     @DistProfiler.annotate(color="cyan")
-    def compute_values(self, data: DataProto):
+    def compute_scores(self, data: DataProto):
         if self._is_offload_param:
             load_fsdp_model_to_gpu(self.teacher_module)
         micro_batch_size = self.config.forward_micro_batch_size_per_gpu
@@ -1929,9 +1929,9 @@ class TeacherWorker(Worker, DistProfilerExtension):
         data.meta_info["use_dynamic_bsz"] = self.config.use_dynamic_bsz
         # perform forward computation
         with self.ulysses_sharding_manager:
-            data = data.to("cpu")  # data will to device with each micro batch on teacher.compute_values
-            values = self.teacher.compute_values(data=data)
-            output = DataProto.from_dict(tensors={"values": values})
+            data = data.to("cpu")  # data will to device with each micro batch on teacher.compute_scores
+            scores = self.teacher.compute_scores(data=data)
+            output = DataProto.from_dict(tensors={"scores": scores})
 
         output = output.to("cpu")
         if self._is_offload_param:

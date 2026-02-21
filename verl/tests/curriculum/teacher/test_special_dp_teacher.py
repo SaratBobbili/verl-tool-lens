@@ -98,8 +98,8 @@ class TestTeacherWorker(unittest.TestCase):
 
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    def _create_test_data_for_compute_values(self, batch_size=2, seq_len=10, response_len=5):
-        """Create test data for compute_values method"""
+    def _create_test_data_for_compute_scores(self, batch_size=2, seq_len=10, response_len=5):
+        """Create test data for compute_scores method"""
         input_ids = torch.randint(0, 1000, (batch_size, seq_len), dtype=torch.long)
         attention_mask = torch.ones(batch_size, seq_len, dtype=torch.long)
         position_ids = torch.arange(seq_len).unsqueeze(0).expand(batch_size, -1)
@@ -130,7 +130,7 @@ class TestTeacherWorker(unittest.TestCase):
         position_ids = torch.arange(seq_len).unsqueeze(0).expand(batch_size, -1)
         responses = torch.randint(0, 1000, (batch_size, response_len), dtype=torch.long)
         response_mask = torch.ones(batch_size, response_len, dtype=torch.float)
-        values = torch.randn(batch_size, response_len, dtype=torch.float)
+        scores = torch.randn(batch_size, response_len, dtype=torch.float)
         returns = torch.randn(batch_size, response_len, dtype=torch.float)
 
         batch = TensorDict(
@@ -140,7 +140,7 @@ class TestTeacherWorker(unittest.TestCase):
                 "position_ids": position_ids,
                 "responses": responses,
                 "response_mask": response_mask,
-                "values": values,
+                "scores": scores,
                 "returns": returns,
             },
             batch_size=[batch_size],
@@ -163,23 +163,23 @@ class TestTeacherWorker(unittest.TestCase):
         self.assertIsNotNone(worker.teacher)
         self.assertIsNotNone(worker.checkpoint_manager)
 
-    def test_compute_values(self):
-        """Test TeacherWorker.compute_values() method"""
+    def test_compute_scores(self):
+        """Test TeacherWorker.compute_scores() method"""
         worker = TeacherWorker(self.config)
         worker.init_model()
 
-        data = self._create_test_data_for_compute_values()
+        data = self._create_test_data_for_compute_scores()
 
-        result = worker.compute_values(data)
+        result = worker.compute_scores(data)
 
         self.assertIsInstance(result, DataProto)
-        self.assertIn("values", result.batch)
-        values = result.batch["values"]
+        self.assertIn("scores", result.batch)
+        scores = result.batch["scores"]
 
         batch_size, response_len = 2, 5
-        self.assertEqual(values.shape, (batch_size, response_len))
+        self.assertEqual(scores.shape, (batch_size, response_len))
 
-        self.assertTrue(torch.isfinite(values).all())
+        self.assertTrue(torch.isfinite(scores).all())
 
     def test_update_teacher(self):
         """Test TeacherWorker.update_teacher() method"""
