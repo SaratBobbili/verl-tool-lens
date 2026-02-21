@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-Base class for a critic
+Base class for a teacher
 """
 
 from abc import ABC, abstractmethod
@@ -21,10 +21,10 @@ import torch
 
 from verl import DataProto
 
-__all__ = ["BasePPOCritic"]
+__all__ = ["BaseTeacher"]
 
 
-class BasePPOCritic(ABC):
+class BaseTeacher(ABC):
     def __init__(self, config):
         super().__init__()
         self.config = config
@@ -35,6 +35,6 @@ class BasePPOCritic(ABC):
         pass
 
     @abstractmethod
-    def update_critic(self, data: DataProto):
-        """Update the critic"""
+    def update_teacher(self, data: DataProto):
+        """Update the teacher"""
         pass

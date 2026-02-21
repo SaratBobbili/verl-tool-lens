@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-Implement a multiprocess PPOCritic
+Implement a multiprocess Teacher
 """
 
 import logging
@@ -33,19 +33,19 @@ from verl.utils.py_functional import append_to_dict
 from verl.utils.seqlen_balancing import prepare_dynamic_batch, restore_dynamic_batch
 from verl.utils.torch_functional import masked_mean
 from verl.utils.ulysses import gather_outputs_and_unpad, ulysses_pad_and_slice_inputs
-from verl.workers.critic import BasePPOCritic
+from verl.workers.teacher import BaseTeacher
 
 logger = logging.getLogger(__file__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 
 
-class DataParallelPPOCritic(BasePPOCritic):
-    def __init__(self, config, critic_module: nn.Module, critic_optimizer: optim.Optimizer):
+class DataParallelTeacher(BaseTeacher):
+    def __init__(self, config, teacher_module: nn.Module, teacher_optimizer: optim.Optimizer):
         super().__init__(config=config)
-        self.critic_module = critic_module
-        self.critic_optimizer = critic_optimizer
+        self.teacher_module = teacher_module
+        self.teacher_optimizer = teacher_optimizer
         self.use_remove_padding = self.config.model.get("use_remove_padding", False)
-        print(f"Critic use_remove_padding={self.use_remove_padding}")
+        print(f"Teacher use_remove_padding={self.use_remove_padding}")
 
         self.ulysses_sequence_parallel_size = self.config.get("ulysses_sequence_parallel_size", 1)
         self.device_name = get_device_name()
@@ -91,7 +91,7 @@ class DataParallelPPOCritic(BasePPOCritic):
                     )
 
                 # only pass input_ids and position_ids to enable flash_attn_varlen
-                output = self.critic_module(
+                output = self.teacher_module(
                     input_ids=input_ids_rmpad,
                     attention_mask=None,
                     position_ids=position_ids_rmpad,
@@ -99,7 +99,7 @@ class DataParallelPPOCritic(BasePPOCritic):
                     use_cache=False,
                 )  # prevent model thinks we are generating
 
-                if hasattr(self.critic_module, "v_head"):
+                if hasattr(self.teacher_module, "v_head"):
                     # For trl.AutoModelForCausalLMWithValueHead
                     values_rmpad = output[2].squeeze(0).unsqueeze(-1)
                 else:
@@ -116,14 +116,14 @@ class DataParallelPPOCritic(BasePPOCritic):
                 values = pad_input(values_rmpad, indices=indices, batch=batch, seqlen=seqlen).squeeze(-1)
                 values = values[:, -response_length - 1 : -1]
             else:
-                output = self.critic_module(
+                output = self.teacher_module(
                     input_ids=input_ids,
                     attention_mask=attention_mask,
                     position_ids=position_ids,
                     **multi_modal_inputs,
                     use_cache=False,
                 )  # prevent model thinks we are generating
-                if hasattr(self.critic_module, "v_head"):
+                if hasattr(self.teacher_module, "v_head"):
                     # For trl.AutoModelForCausalLMWithValueHead
                     values = output[2]
                 else:
@@ -134,24 +134,24 @@ class DataParallelPPOCritic(BasePPOCritic):
     def _optimizer_step(self):
         assert self.config.grad_clip is not None
 
-        if isinstance(self.critic_module, FSDP):
-            grad_norm = self.critic_module.clip_grad_norm_(self.config.grad_clip)
-        elif isinstance(self.critic_module, FSDPModule):
-            grad_norm = fsdp2_clip_grad_norm_(self.critic_module.parameters(), max_norm=self.config.grad_clip)
+        if isinstance(self.teacher_module, FSDP):
+            grad_norm = self.teacher_module.clip_grad_norm_(self.config.grad_clip)
+        elif isinstance(self.teacher_module, FSDPModule):
+            grad_norm = fsdp2_clip_grad_norm_(self.teacher_module.parameters(), max_norm=self.config.grad_clip)
         else:
-            grad_norm = torch.nn.utils.clip_grad_norm_(self.critic_module.parameters(), max_norm=self.config.grad_clip)
+            grad_norm = torch.nn.utils.clip_grad_norm_(self.teacher_module.parameters(), max_norm=self.config.grad_clip)
 
         # if grad_norm is not finite, skip the update
         if not torch.isfinite(grad_norm):
             print(f"WARN: grad_norm is not finite: {grad_norm}")
-            self.critic_optimizer.zero_grad()
+            self.teacher_optimizer.zero_grad()
         else:
-            self.critic_optimizer.step()
+            self.teacher_optimizer.step()
         return grad_norm
 
-    @GPUMemoryLogger(role="dp critic", logger=logger)
+    @GPUMemoryLogger(role="dp teacher", logger=logger)
     def compute_values(self, data: DataProto) -> torch.Tensor:
-        self.critic_module.eval()
+        self.teacher_module.eval()
         micro_batch_size = data.meta_info["micro_batch_size"]
         use_dynamic_bsz = data.meta_info["use_dynamic_bsz"]
         has_multi_modal_inputs = "multi_modal_inputs" in data.non_tensor_batch.keys()
@@ -188,10 +188,10 @@ class DataParallelPPOCritic(BasePPOCritic):
             values = values * response_mask  # Only action tokens have values
         return values
 
-    @GPUMemoryLogger(role="dp critic", logger=logger)
-    def update_critic(self, data: DataProto):
+    @GPUMemoryLogger(role="dp teacher", logger=logger)
+    def update_teacher(self, data: DataProto):
         # make sure we are in training mode
-        self.critic_module.train()
+        self.teacher_module.train()
         metrics = {}
 
         select_keys = ["input_ids", "responses", "response_mask", "attention_mask", "position_ids", "values", "returns"]
@@ -215,7 +215,7 @@ class DataParallelPPOCritic(BasePPOCritic):
                     )
                     micro_batches = mini_batch.split(self.config.ppo_micro_batch_size_per_gpu)
 
-                self.critic_optimizer.zero_grad()
+                self.teacher_optimizer.zero_grad()
 
                 for micro_batch in micro_batches:
                     micro_batch = micro_batch.to(get_device_id())
@@ -246,16 +246,16 @@ class DataParallelPPOCritic(BasePPOCritic):
 
                     micro_batch_metrics.update(
                         {
-                            "critic/vf_loss": vf_loss.detach().item() * loss_scale_factor,
-                            "critic/vf_clipfrac": vf_clipfrac.detach().item(),
-                            "critic/vpred_mean": masked_mean(vpreds, response_mask).detach().item(),
+                            "teacher/vf_loss": vf_loss.detach().item() * loss_scale_factor,
+                            "teacher/vf_clipfrac": vf_clipfrac.detach().item(),
+                            "teacher/vpred_mean": masked_mean(vpreds, response_mask).detach().item(),
                         }
                     )
 
                     append_to_dict(metrics, micro_batch_metrics)
 
                 grad_norm = self._optimizer_step()
-                mini_batch_metrics = {"critic/grad_norm": grad_norm.detach().item()}
+                mini_batch_metrics = {"teacher/grad_norm": grad_norm.detach().item()}
                 append_to_dict(metrics, mini_batch_metrics)
-        self.critic_optimizer.zero_grad()
+        self.teacher_optimizer.zero_grad()
         return metrics

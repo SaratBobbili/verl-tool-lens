@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .base import BasePPOCritic
-from .dp_teacher import DataParallelPPOCritic
+from .base import BaseTeacher
+from .dp_teacher import DataParallelTeacher
 
-__all__ = ["BasePPOCritic", "DataParallelPPOCritic"]
+__all__ = ["BaseTeacher", "DataParallelTeacher"]

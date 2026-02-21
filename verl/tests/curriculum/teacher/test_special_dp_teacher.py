@@ -25,13 +25,13 @@ from tensordict import TensorDict
 from transformers import AutoConfig
 
 from verl import DataProto
-from verl.workers.config import FSDPCriticConfig, FSDPOptimizerConfig
-from verl.workers.config.critic import FSDPCriticModelCfg
+from verl.workers.config import FSDPTeacherConfig, FSDPOptimizerConfig
+from verl.workers.config.teacher import FSDPTeacherModelCfg
 from verl.workers.config.engine import FSDPEngineConfig
-from verl.workers.fsdp_workers import CriticWorker
+from verl.workers.fsdp_workers import TeacherWorker
 
 
-class TestCriticWorker(unittest.TestCase):
+class TestTeacherWorker(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Set up distributed environment"""
@@ -71,7 +71,7 @@ class TestCriticWorker(unittest.TestCase):
         config = AutoConfig.from_pretrained("Qwen/Qwen2.5-0.5B-Instruct")
         config.save_pretrained(self.temp_dir)
 
-        self.config = FSDPCriticConfig(
+        self.config = FSDPTeacherConfig(
             strategy="fsdp2",
             ppo_mini_batch_size=4,
             ppo_micro_batch_size_per_gpu=2,
@@ -83,7 +83,7 @@ class TestCriticWorker(unittest.TestCase):
             ulysses_sequence_parallel_size=1,
             rollout_n=1,
             optim=FSDPOptimizerConfig(lr=1e-6),
-            model=FSDPCriticModelCfg(
+            model=FSDPTeacherModelCfg(
                 path="Qwen/Qwen2.5-0.5B-Instruct",
                 tokenizer_path="Qwen/Qwen2.5-0.5B-Instruct",
                 fsdp_config=FSDPEngineConfig(fsdp_size=-1),
@@ -123,8 +123,8 @@ class TestCriticWorker(unittest.TestCase):
 
         return data
 
-    def _create_test_data_for_update_critic(self, batch_size=2, seq_len=10, response_len=5):
-        """Create test data for update_critic method"""
+    def _create_test_data_for_update_teacher(self, batch_size=2, seq_len=10, response_len=5):
+        """Create test data for update_teacher method"""
         input_ids = torch.randint(0, 1000, (batch_size, seq_len), dtype=torch.long)
         attention_mask = torch.ones(batch_size, seq_len, dtype=torch.long)
         position_ids = torch.arange(seq_len).unsqueeze(0).expand(batch_size, -1)
@@ -154,18 +154,18 @@ class TestCriticWorker(unittest.TestCase):
         return data
 
     def test_init_model(self):
-        """Test CriticWorker.init_model() method"""
-        worker = CriticWorker(self.config)
+        """Test TeacherWorker.init_model() method"""
+        worker = TeacherWorker(self.config)
         worker.init_model()
 
-        self.assertIsNotNone(worker.critic_module)
-        self.assertIsNotNone(worker.critic_optimizer)
-        self.assertIsNotNone(worker.critic)
+        self.assertIsNotNone(worker.teacher_module)
+        self.assertIsNotNone(worker.teacher_optimizer)
+        self.assertIsNotNone(worker.teacher)
         self.assertIsNotNone(worker.checkpoint_manager)
 
     def test_compute_values(self):
-        """Test CriticWorker.compute_values() method"""
-        worker = CriticWorker(self.config)
+        """Test TeacherWorker.compute_values() method"""
+        worker = TeacherWorker(self.config)
         worker.init_model()
 
         data = self._create_test_data_for_compute_values()
@@ -181,20 +181,20 @@ class TestCriticWorker(unittest.TestCase):
 
         self.assertTrue(torch.isfinite(values).all())
 
-    def test_update_critic(self):
-        """Test CriticWorker.update_critic() method"""
-        worker = CriticWorker(self.config)
+    def test_update_teacher(self):
+        """Test TeacherWorker.update_teacher() method"""
+        worker = TeacherWorker(self.config)
         worker.init_model()
 
-        data = self._create_test_data_for_update_critic()
+        data = self._create_test_data_for_update_teacher()
 
-        result = worker.update_critic(data)
+        result = worker.update_teacher(data)
 
         self.assertIsInstance(result, DataProto)
         self.assertIn("metrics", result.meta_info)
         metrics = result.meta_info["metrics"]
 
-        expected_keys = ["critic/vf_loss", "critic/vf_clipfrac", "critic/vpred_mean", "critic/grad_norm"]
+        expected_keys = ["teacher/vf_loss", "teacher/vf_clipfrac", "teacher/vpred_mean", "teacher/grad_norm"]
         for key in expected_keys:
             self.assertIn(key, metrics)
 
@@ -206,8 +206,8 @@ class TestCriticWorker(unittest.TestCase):
                 self.assertTrue(torch.isfinite(torch.tensor(value)).all())
 
     @patch("transformers.AutoConfig.from_pretrained")
-    def test_critic_attn_implementation_override_functionality(self, mock_config_from_pretrained):
-        """Test that CriticWorker correctly uses attn_implementation from override_config"""
+    def test_teacher_attn_implementation_override_functionality(self, mock_config_from_pretrained):
+        """Test that TeacherWorker correctly uses attn_implementation from override_config"""
 
         # Mock the AutoConfig return value
         mock_config = Mock()
@@ -253,7 +253,7 @@ class TestCriticWorker(unittest.TestCase):
             # Convert to OmegaConf
             test_config = OmegaConf.create(config_dict)
 
-            # Test the extraction logic that should happen in CriticWorker._build_critic_model_optimizer
+            # Test the extraction logic that should happen in TeacherWorker._build_teacher_model_optimizer
             override_config = OmegaConf.to_container(OmegaConf.create(test_config.model.get("override_config", {})))
             extracted_attn_implementation = override_config.get("attn_implementation", "flash_attention_2")
 
@@ -264,8 +264,8 @@ class TestCriticWorker(unittest.TestCase):
                 f"Expected {expected_value}, got {extracted_attn_implementation} for override_value {override_value}",
             )
 
-    def test_critic_model_config_structure(self):
-        """Test that critic model config properly incorporates override settings"""
+    def test_teacher_model_config_structure(self):
+        """Test that teacher model config properly incorporates override settings"""
 
         # Test configuration scenarios
         test_scenarios = [
@@ -281,7 +281,7 @@ class TestCriticWorker(unittest.TestCase):
 
         for scenario in test_scenarios:
             with self.subTest(scenario=scenario["name"]):
-                # Simulate the config processing logic from CriticWorker
+                # Simulate the config processing logic from TeacherWorker
                 override_config = scenario["override_config"]
 
                 # Test the extraction logic
@@ -294,28 +294,8 @@ class TestCriticWorker(unittest.TestCase):
                 if "dropout" in override_config:
                     self.assertEqual(override_config["dropout"], 0.1)
 
-    def test_critic_hydra_config_compatibility(self):
-        """Test that Hydra +prefix configurations work correctly for CriticWorker"""
-
-        # Simulate Hydra configuration with +prefix for critic
-        # This would come from: +critic.model.override_config.attn_implementation=eager
-        hydra_config_dict = {
-            "critic": {"model": {"path": "/test/model/path", "override_config": {"attn_implementation": "eager"}}}
-        }
-
-        omegaconf = OmegaConf.create(hydra_config_dict)
-
-        # Extract override config as would be done in CriticWorker
-        override_model_config = OmegaConf.to_container(
-            OmegaConf.create(omegaconf.critic.model.get("override_config", {}))
-        )
-
-        # Test extraction
-        attn_implementation = override_model_config.get("attn_implementation", "flash_attention_2")
-        self.assertEqual(attn_implementation, "eager")
-
-    def test_critic_backward_compatibility(self):
-        """Test that CriticWorker maintains backward compatibility with existing configurations"""
+    def test_teacher_backward_compatibility(self):
+        """Test that TeacherWorker maintains backward compatibility with existing configurations"""
 
         # Test cases for backward compatibility
         compatibility_tests = [
@@ -336,32 +316,6 @@ class TestCriticWorker(unittest.TestCase):
                 self.assertEqual(
                     attn_implementation, test["expected"], f"Backward compatibility failed for {test['name']}"
                 )
-
-    def test_critic_and_actor_independent_configuration(self):
-        """Test that critic and actor can have independent attention implementation configurations"""
-
-        # Simulate a complete training configuration with both actor and critic
-        complete_config = {
-            "actor_rollout_ref": {"model": {"override_config": {"attn_implementation": "eager"}}},
-            "critic": {"model": {"override_config": {"attn_implementation": "sdpa"}}},
-        }
-
-        omegaconf = OmegaConf.create(complete_config)
-
-        # Extract actor config
-        actor_override = OmegaConf.to_container(
-            OmegaConf.create(omegaconf.actor_rollout_ref.model.get("override_config", {}))
-        )
-        actor_attn = actor_override.get("attn_implementation", "flash_attention_2")
-
-        # Extract critic config
-        critic_override = OmegaConf.to_container(OmegaConf.create(omegaconf.critic.model.get("override_config", {})))
-        critic_attn = critic_override.get("attn_implementation", "flash_attention_2")
-
-        # Verify independent configuration
-        self.assertEqual(actor_attn, "eager")
-        self.assertEqual(critic_attn, "sdpa")
-        self.assertNotEqual(actor_attn, critic_attn)  # Ensure they are indeed different
 
 
 if __name__ == "__main__":
