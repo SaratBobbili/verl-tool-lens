@@ -4,7 +4,7 @@ set -x
 source .venv/bin/activate
 
 # GPU settings - use GPU 0,1,2,3
-#export CUDA_VISIBLE_DEVICES=2,3,4,5
+export CUDA_VISIBLE_DEVICES=0,1,2,3
 
 # Set WANDB API key for non-interactive login
 #export WANDB_API_KEY="b6b5b4b6ca196930f9dd15a5e51d9729a6065109"
@@ -15,13 +15,13 @@ val_data=[$(pwd)/data/${dataset_name}/test.parquet,\
 $(pwd)/data/${dataset_name}/math500_test.parquet,\
 $(pwd)/data/${dataset_name}/aime24_test.parquet,\
 $(pwd)/data/${dataset_name}/aime25_test.parquet]
-model_name=Qwen/Qwen2.5-Math-1.5B
+model_name=Qwen/Qwen2.5-Math-1.5B-Instruct
 rl_alg=grpo # gae(ppo) or grpo, if grpo, then better set n>1 otherwise the group norm can not be effective
-n_gpus_per_node=2  # Using 6 GPUs: 0,1,2,3,4,5
+n_gpus_per_node=4  # Using 6 GPUs: 0,1,2,3,4,5
 n_nodes=1
 n=16
-batch_size=8
-ppo_mini_batch_size=8
+batch_size=128
+ppo_mini_batch_size=128
 max_prompt_length=1024
 max_response_length=3072
 max_obs_length=512
@@ -37,7 +37,7 @@ entropy_coeff=0
 kl_loss_type=low_var_kl
 lr=1e-6
 reward_manager=torl
-wandb_project=multi-turn-w-tool  # wandb project name, change this to your desired project name
+wandb_project=1.5b-single-turn  # wandb project name, change this to your desired project name
 ppo_micro_batch_size_per_gpu=1
 log_prob_micro_batch_size_per_gpu=8
 tensor_model_parallel_size=1
@@ -62,7 +62,7 @@ export NCCL_DEBUG=WARN
 export VLLM_USE_V1=1
 rollout_mode='async'
 unset ROCR_VISIBLE_DEVICES HIP_VISIBLE_DEVICES
-export CUDA_VISIBLE_DEVICES=0,1
+#export CUDA_VISIBLE_DEVICES=0,1
 echo $ROCR_VISIBLE_DEVICES  # should be empty
 
 # temp file for action tokens as verl cannot pass special strs as params
@@ -74,9 +74,11 @@ echo "action_stop_tokens_file=$action_stop_tokens_file"
 host=$(hostname -i | awk '{print $1}')
 #port=$(shuf -i 30000-31000 -n 1)
 port=5500
-uvi_workers=16
+uvi_workers=32
+max_concurrent_requests=4096
+router_workers=32
 tool_server_url=http://$host:$port/get_observation
-python -m verl_tool.servers.serve --host $host --port $port --tool_type "ipython_code" --workers_per_tool 8 --use_ray=True --uvi_workers=$uvi_workers > logs/tool_server.log &
+python -m verl_tool.servers.serve --host $host --port $port --tool_type "ipython_code" --workers_per_tool 8 --use_ray=True --uvi_workers=$uvi_workers --router_workers=$router_workers --max_concurrent_requests=$max_concurrent_requests > logs/tool_server.log &
 server_pid=$!
 
 echo "Server (pid=$server_pid) started at $tool_server_url"
@@ -86,7 +88,7 @@ PYTHONUNBUFFERED=1 python3 -m verl_tool.trainer.main_ppo \
     data.train_files=$train_data \
     data.val_files=$val_data \
     data.train_batch_size=$batch_size \
-    data.val_batch_size=8 \
+    data.val_batch_size=128 \
     data.max_prompt_length=$max_prompt_length \
     data.max_response_length=$max_response_length \
     data.truncation='right' \
@@ -139,7 +141,7 @@ PYTHONUNBUFFERED=1 python3 -m verl_tool.trainer.main_ppo \
     actor_rollout_ref.rollout.log_prob_use_dynamic_bsz=$use_dynamic_bsz \
     actor_rollout_ref.rollout.max_num_seqs=512 \
     actor_rollout_ref.rollout.mode=$rollout_mode \
-    actor_rollout_ref.rollout.val_kwargs.n=8 \
+    actor_rollout_ref.rollout.val_kwargs.n=1 \
     actor_rollout_ref.rollout.val_kwargs.temperature=$temperature \
     actor_rollout_ref.ref.log_prob_use_dynamic_bsz=$use_dynamic_bsz \
     actor_rollout_ref.ref.fsdp_config.param_offload=$do_offload \
@@ -155,16 +157,16 @@ PYTHONUNBUFFERED=1 python3 -m verl_tool.trainer.main_ppo \
     trainer.logger=['console','wandb'] \
     trainer.project_name=$wandb_project \
     trainer.experiment_name=$run_name \
-    trainer.val_before_train=False \
+    trainer.val_before_train=True \
     trainer.default_hdfs_dir=null \
     trainer.rollout_data_dir=$(pwd)/verl_step_records/$run_name \
     trainer.validation_data_dir=null \
     trainer.n_gpus_per_node=$n_gpus_per_node \
     trainer.nnodes=$n_nodes \
     +trainer.remove_previous_ckpt_in_save=False \
-    trainer.save_freq=5 \
-    trainer.test_freq=5 \
-    trainer.total_epochs=20
+    trainer.save_freq=10 \
+    trainer.test_freq=10 \
+    trainer.total_epochs=1
 
 
 pkill -P -9 $server_pid

@@ -75,8 +75,10 @@ host=$(hostname -i | awk '{print $1}')
 #port=$(shuf -i 30000-31000 -n 1)
 port=5500
 uvi_workers=16
+router_workers=32
+max_concurrent_requests=4096
 tool_server_url=http://$host:$port/get_observation
-python -m verl_tool.servers.serve --host $host --port $port --tool_type "ipython_code" --workers_per_tool 8 --use_ray=True --uvi_workers=$uvi_workers  > logs/tool_server.log &
+python -m verl_tool.servers.serve --host $host --port $port --tool_type "ipython_code" --workers_per_tool 8 --use_ray=True --uvi_workers=$uvi_workers --router_workers=$router_workers --max_concurrent_requests=$max_concurrent_requests > logs/tool_server.log &
 server_pid=$!
 
 echo "Server (pid=$server_pid) started at $tool_server_url"
