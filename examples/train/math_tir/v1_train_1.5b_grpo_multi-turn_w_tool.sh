@@ -39,7 +39,7 @@ lr=1e-6
 reward_manager=torl
 wandb_project=1.5b-single-turn  # wandb project name, change this to your desired project name
 ppo_micro_batch_size_per_gpu=1
-log_prob_micro_batch_size_per_gpu=8
+log_prob_micro_batch_size_per_gpu=128
 tensor_model_parallel_size=1
 gpu_memory_utilization=0.6 # Lower value to leave memory for training
 do_offload=True # Enable offload to save GPU memory
@@ -49,7 +49,7 @@ fsdp_size=-1
 additional_eos_token_ids=[151645] # <|im_end|> token id
 mask_observations=True # mask observations for kl loss and gradient descent
 enable_mtrl=True # enable multi-turn training
-max_action_length=2048
+max_action_length=1024
 model_pretty_name=$(echo $model_name | tr '/' '_' | tr '[:upper:]' '[:lower:]')
 run_name_postfix="acc-only-4gpu"
 if [ "$enable_agent" = "True" ]; then
@@ -74,11 +74,12 @@ echo "action_stop_tokens_file=$action_stop_tokens_file"
 host=$(hostname -i | awk '{print $1}')
 #port=$(shuf -i 30000-31000 -n 1)
 port=5500
-uvi_workers=32
-max_concurrent_requests=4096
-router_workers=32
+uvi_workers=8
+max_concurrent_requests=2048
+router_workers=8
+workers_per_tool=8
 tool_server_url=http://$host:$port/get_observation
-python -m verl_tool.servers.serve --host $host --port $port --tool_type "ipython_code" --workers_per_tool 8 --use_ray=True --uvi_workers=$uvi_workers --router_workers=$router_workers --max_concurrent_requests=$max_concurrent_requests > logs/tool_server.log &
+python -m verl_tool.servers.serve --host $host --port $port --tool_type "ipython_code" --workers_per_tool $workers_per_tool --use_ray=True --uvi_workers=$uvi_workers --router_workers=$router_workers --max_concurrent_requests=$max_concurrent_requests > logs/tool_server.log &
 server_pid=$!
 
 echo "Server (pid=$server_pid) started at $tool_server_url"
@@ -125,7 +126,7 @@ PYTHONUNBUFFERED=1 python3 -m verl_tool.trainer.main_ppo \
     actor_rollout_ref.agent.action_stop_tokens=$action_stop_tokens_file \
     actor_rollout_ref.agent.enable_mtrl=$enable_mtrl \
     actor_rollout_ref.agent.max_action_length=$max_action_length \
-    actor_rollout_ref.agent.max_concurrent_trajectories=8 \
+    actor_rollout_ref.agent.max_concurrent_trajectories=2048 \
     +actor_rollout_ref.agent.retokenization=True \
     +actor_rollout_ref.agent.tool_call_max_retries=5 \
     actor_rollout_ref.rollout.tensor_model_parallel_size=$tensor_model_parallel_size \
@@ -164,8 +165,8 @@ PYTHONUNBUFFERED=1 python3 -m verl_tool.trainer.main_ppo \
     trainer.n_gpus_per_node=$n_gpus_per_node \
     trainer.nnodes=$n_nodes \
     +trainer.remove_previous_ckpt_in_save=False \
-    trainer.save_freq=10 \
-    trainer.test_freq=10 \
+    trainer.save_freq=5 \
+    trainer.test_freq=5 \
     trainer.total_epochs=1
 
 

@@ -114,6 +114,11 @@ class AgentRayPPOTrainer(RayPPOTrainer):
             sample_outputs.extend(output_texts)
 
             test_batch = test_batch.union(test_output_gen_batch)
+
+            #Strip pre-computed trianing scores so val_reward_fn runs the full scoring path.
+            if "rm_scores" in test_batch.batch:
+                del test_batch.batch["rm_scores"]
+            
             test_batch.meta_info["validate"] = True
 
             # evaluate using reward_function
