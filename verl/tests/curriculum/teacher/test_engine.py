@@ -32,7 +32,6 @@ from verl.trainer.config import CheckpointConfig
 from verl.utils.model import compute_position_id_with_mask, create_random_mask
 from verl.utils.torch_functional import logprobs_from_logits_naive
 from verl.workers.config import (
-	ActorConfig,
 	CriticConfig,
 	FSDPEngineConfig,
 	FSDPOptimizerConfig,
@@ -40,8 +39,7 @@ from verl.workers.config import (
 	McoreEngineConfig,
 	McoreOptimizerConfig,
 )
-from verl.workers.roles import ActorWorker, CriticWorker
-from verl.workers.roles.utils.losses import ppo_loss, sft_loss
+from verl.workers.roles import CriticWorker
 
 def create_model():
 	from transformers import Qwen3Config

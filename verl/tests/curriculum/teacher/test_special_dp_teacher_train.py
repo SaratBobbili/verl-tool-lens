@@ -28,10 +28,9 @@ from verl import DataProto
 from verl.workers.config import FSDPTeacherConfig, FSDPOptimizerConfig
 from verl.workers.config.teacher import FSDPTeacherModelCfg
 from verl.workers.config.engine import FSDPEngineConfig
-from verl.workers.fsdp_workers import TeacherWorker
+from verl.workers.fsdp_workers import TeacherTrainWorker
 
-
-class TestTeacherWorker(unittest.TestCase):
+class TestTeacherTrainWorker(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Set up distributed environment"""
@@ -98,31 +97,6 @@ class TestTeacherWorker(unittest.TestCase):
 
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    def _create_test_data_for_compute_scores(self, batch_size=2, seq_len=10, response_len=5):
-        """Create test data for compute_scores method"""
-        input_ids = torch.randint(0, 1000, (batch_size, seq_len), dtype=torch.long)
-        attention_mask = torch.ones(batch_size, seq_len, dtype=torch.long)
-        position_ids = torch.arange(seq_len).unsqueeze(0).expand(batch_size, -1)
-        responses = torch.randint(0, 1000, (batch_size, response_len), dtype=torch.long)
-        response_mask = torch.ones(batch_size, response_len, dtype=torch.float)
-
-        batch = TensorDict(
-            {
-                "input_ids": input_ids,
-                "attention_mask": attention_mask,
-                "position_ids": position_ids,
-                "responses": responses,
-                "response_mask": response_mask,
-            },
-            batch_size=[batch_size],
-        )
-
-        data = DataProto(
-            batch=batch, meta_info={"micro_batch_size": 2, "max_token_len": seq_len, "use_dynamic_bsz": False}
-        )
-
-        return data
-
     def _create_test_data_for_update_teacher(self, batch_size=2, seq_len=10, response_len=5):
         """Create test data for update_teacher method"""
         input_ids = torch.randint(0, 1000, (batch_size, seq_len), dtype=torch.long)
@@ -154,8 +128,8 @@ class TestTeacherWorker(unittest.TestCase):
         return data
 
     def test_init_model(self):
-        """Test TeacherWorker.init_model() method"""
-        worker = TeacherWorker(self.config)
+        """Test TeacherTrainWorker.init_model() method"""
+        worker = TeacherTrainWorker(self.config)
         worker.init_model()
 
         self.assertIsNotNone(worker.teacher_module)
@@ -163,27 +137,10 @@ class TestTeacherWorker(unittest.TestCase):
         self.assertIsNotNone(worker.teacher)
         self.assertIsNotNone(worker.checkpoint_manager)
 
-    def test_compute_scores(self):
-        """Test TeacherWorker.compute_scores() method"""
-        worker = TeacherWorker(self.config)
-        worker.init_model()
-
-        data = self._create_test_data_for_compute_scores()
-
-        result = worker.compute_scores(data)
-
-        self.assertIsInstance(result, DataProto)
-        self.assertIn("scores", result.batch)
-        scores = result.batch["scores"]
-
-        batch_size, response_len = 2, 5
-        self.assertEqual(scores.shape, (batch_size, response_len))
-
-        self.assertTrue(torch.isfinite(scores).all())
-
+    
     def test_update_teacher(self):
-        """Test TeacherWorker.update_teacher() method"""
-        worker = TeacherWorker(self.config)
+        """Test TeacherTrainWorker.update_teacher() method"""
+        worker = TeacherTrainWorker(self.config)
         worker.init_model()
 
         data = self._create_test_data_for_update_teacher()
@@ -207,7 +164,7 @@ class TestTeacherWorker(unittest.TestCase):
 
     @patch("transformers.AutoConfig.from_pretrained")
     def test_teacher_attn_implementation_override_functionality(self, mock_config_from_pretrained):
-        """Test that TeacherWorker correctly uses attn_implementation from override_config"""
+        """Test that TeacherTrainWorker correctly uses attn_implementation from override_config"""
 
         # Mock the AutoConfig return value
         mock_config = Mock()
@@ -253,7 +210,7 @@ class TestTeacherWorker(unittest.TestCase):
             # Convert to OmegaConf
             test_config = OmegaConf.create(config_dict)
 
-            # Test the extraction logic that should happen in TeacherWorker._build_teacher_model_optimizer
+            # Test the extraction logic that should happen in TeacherTrainWorker._build_teacher_model_optimizer
             override_config = OmegaConf.to_container(OmegaConf.create(test_config.model.get("override_config", {})))
             extracted_attn_implementation = override_config.get("attn_implementation", "flash_attention_2")
 
@@ -281,7 +238,7 @@ class TestTeacherWorker(unittest.TestCase):
 
         for scenario in test_scenarios:
             with self.subTest(scenario=scenario["name"]):
-                # Simulate the config processing logic from TeacherWorker
+                # Simulate the config processing logic from TeacherTrainWorker
                 override_config = scenario["override_config"]
 
                 # Test the extraction logic
@@ -295,7 +252,7 @@ class TestTeacherWorker(unittest.TestCase):
                     self.assertEqual(override_config["dropout"], 0.1)
 
     def test_teacher_backward_compatibility(self):
-        """Test that TeacherWorker maintains backward compatibility with existing configurations"""
+        """Test that TeacherTrainWorker maintains backward compatibility with existing configurations"""
 
         # Test cases for backward compatibility
         compatibility_tests = [
@@ -316,7 +273,6 @@ class TestTeacherWorker(unittest.TestCase):
                 self.assertEqual(
                     attn_implementation, test["expected"], f"Backward compatibility failed for {test['name']}"
                 )
-
 
 if __name__ == "__main__":
     unittest.main()

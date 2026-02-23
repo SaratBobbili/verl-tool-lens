@@ -35,6 +35,7 @@ class Role(Enum):
     RefPolicy = 4
     RewardModel = 5
     ActorRolloutRef = 6
+    TeacherTrain = 7
 
     def __str__(self):
         return self._get_role_string()
@@ -48,6 +49,7 @@ class Role(Enum):
             Role.RefPolicy: "ref",
             Role.RewardModel: "rm",
             Role.ActorRolloutRef: "actor_rollout_ref",
+            Role.TeacherTrain: "teacher_train",
         }
         return role_mapping.get(self, self.name.lower())
 
@@ -61,6 +63,7 @@ class Role(Enum):
             "ref": cls.RefPolicy,
             "rm": cls.RewardModel,
             "actor_rollout_ref": cls.ActorRolloutRef,
+            "teacher_train": cls.TeacherTrain,
         }
         role = string_mapping.get(name.lower())
         if role is None:
@@ -94,3 +97,7 @@ def need_critic(config: DictConfig) -> bool:
             stacklevel=2,
         )
         return False
+
+def need_teacher_train(role_worker_mapping: dict[Role, WorkerType]) -> bool:
+    """Given a role worker mapping, do we need teacher trainer."""
+    return Role.TeacherTrain in role_worker_mapping

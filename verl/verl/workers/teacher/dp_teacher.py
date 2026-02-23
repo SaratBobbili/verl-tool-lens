@@ -35,11 +35,30 @@ from verl.utils.torch_functional import masked_mean
 from verl.utils.ulysses import gather_outputs_and_unpad, ulysses_pad_and_slice_inputs
 from verl.workers.teacher import BaseTeacher
 
-# import time, json
-
 logger = logging.getLogger(__file__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 
+def compute_mse_loss(
+    preds: torch.Tensor,
+    scores: torch.Tensor,
+):
+    """
+    Compute the MSE loss for regression with the teacher model.
+
+    Loosely based on compute_value_loss in core_algos
+
+    Args:
+        preds (torch.FloatTensor):
+            Predicted values from the value head, shape (batch_size, response_length).
+        scores (torch.FloatTensor):
+            Ground truth scores, shape (batch_size, response_length).
+
+    Returns:
+        mse_loss (torch.FloatTensor):
+            A scalar tensor containing the aggregated MSE loss.
+    """
+    mse_loss = (preds - scores) ** 2
+    return mse_loss.mean()
 
 class DataParallelTeacher(BaseTeacher):
     def __init__(self, config, teacher_module: nn.Module, teacher_optimizer: optim.Optimizer):
@@ -56,7 +75,10 @@ class DataParallelTeacher(BaseTeacher):
         self.version = 0
 
     def _forward_micro_batch(self, micro_batch):
-        response_length = micro_batch["responses"].size(-1)
+        # response_length = micro_batch["responses"].size(-1)
+        # TODO: Setting response_length to 1 will give us the desired result of returning the last token's score,
+        # but in the future we will remove response_length entirely and probably use pooling
+        response_length = 1
         multi_modal_inputs = {}
         if "multi_modal_inputs" in micro_batch.keys():
             from verl.utils.model import extract_multi_modal_inputs
@@ -208,7 +230,8 @@ class DataParallelTeacher(BaseTeacher):
         self.teacher_module.train()
         metrics = {}
 
-        select_keys = ["input_ids", "responses", "response_mask", "attention_mask", "position_ids", "scores", "returns"]
+        # TODO: Remove response_mask
+        select_keys = ["input_ids", "responses", "response_mask", "attention_mask", "position_ids", "scores"]
         has_multi_modal_inputs = "multi_modal_inputs" in data.non_tensor_batch.keys()
         non_tensor_select_keys = ["multi_modal_inputs"] if has_multi_modal_inputs else []
 
@@ -237,33 +260,24 @@ class DataParallelTeacher(BaseTeacher):
                     model_inputs = {**micro_batch.batch, **micro_batch.non_tensor_batch}
                     response_mask = model_inputs["response_mask"]
                     scores = model_inputs["scores"]
-                    returns = model_inputs["returns"]
 
-                    vpreds = self._forward_micro_batch(model_inputs)
-                    # TODO: Replace this with regression loss
-                    vf_loss, vf_clipfrac = core_algos.compute_value_loss(
-                        vpreds=vpreds,
-                        values=scores,
-                        returns=returns,
-                        response_mask=response_mask,
-                        cliprange_value=self.config.cliprange_value,
-                        loss_agg_mode=self.config.loss_agg_mode,
-                    )
+                    preds = self._forward_micro_batch(model_inputs)
+                    
+                    loss = compute_mse_loss(preds, scores)
+
                     if self.config.use_dynamic_bsz:
                         # relative to the dynamic bsz
                         loss_scale_factor = response_mask.shape[0] / self.config.ppo_mini_batch_size
-                        loss = vf_loss * loss_scale_factor
+                        loss = loss * loss_scale_factor
                     else:
                         loss_scale_factor = 1 / self.gradient_accumulation
-                        loss = vf_loss * loss_scale_factor
+                        loss = loss * loss_scale_factor
 
                     loss.backward()
 
                     micro_batch_metrics.update(
                         {
-                            "teacher/vf_loss": vf_loss.detach().item() * loss_scale_factor,
-                            "teacher/vf_clipfrac": vf_clipfrac.detach().item(),
-                            "teacher/vpred_mean": masked_mean(vpreds, response_mask).detach().item(),
+                            "teacher/mse_loss": loss.detach().item() * loss_scale_factor,
                         }
                     )
 
