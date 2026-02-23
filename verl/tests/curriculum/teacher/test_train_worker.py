@@ -61,7 +61,7 @@ def test_teacher_train_worker(strategy):
 	GlobalHydra.instance().clear()  
 	try:  
 		# This requires an absolute path
-		with initialize_config_dir(config_dir=os.path.join(os.path.dirname(__file__), "..", "..", "..", "verl/trainer/config")):  
+		with initialize_config_dir(config_dir=os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "verl_tool/trainer/config")):  
 			config = compose(config_name="ppo_trainer", overrides=[
 				"teacher_train.ppo_micro_batch_size_per_gpu=256",
 				"teacher_train.model.path=Qwen/Qwen2.5-1.5B-Instruct",
