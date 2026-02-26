@@ -27,9 +27,6 @@ defaults:
   # Critic model config.
   - critic@critic: dp_critic
 
-  # Teacher model config.
-  - teacher@teacher_train: dp_teacher
-
   # Reward model config.
   - reward_model@reward_model: dp_reward_model
 

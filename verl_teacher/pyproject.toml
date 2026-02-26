@@ -1,0 +1,29 @@
+[project]
+name = "verl-teacher"
+version = "0.0.1"
+description = "Add your description here"
+readme = "README.md"
+# I am copying the requirements for verl-tool here
+requires-python = ">=3.10"
+dependencies = [
+    "fire>=0.7.0",
+    "psutils>=3.3.9",
+    "timeout-decorator>=0.5.0",
+    "pyext",
+    "qwen_vl_utils>=0.0.14",
+    "qwen_omni_utils",
+    "transformers",
+    "tensorboard",
+    "ipython",
+    "func_timeout",
+    "aiofiles",
+    "click==8.2.1",
+]
+
+[tool.setuptools]
+packages = ["verl_teacher"]
+
+[project.optional-dependencies]
+vllm = [
+    "vllm<=0.11.0",
+]

@@ -7,8 +7,16 @@ rollout_n: ${oc.select:actor_rollout_ref.rollout.n,1}
 # fsdp or fsdp2 strategy used for teacher model training
 strategy: ???
 
+# TODO: Remove
 # whether to enable the teacher worker (false by default).
 enable: false
+
+# Whether to run the TeacherTrain worker (does not require TeacherScore worker to be running)
+trainer_enable: False
+
+# Whether to run the TeacherScore worker (can be used on its own for debugging, but for normal
+# use the trainer should be enabled as well so that the teacher can learn to give useful outputs)
+scorer_enable: False
 
 # optimizer configs
 optim:
@@ -36,7 +44,7 @@ model:
   path: ~/models/deepseek-llm-7b-chat
 
   # Tokenizer path (defaults to actor's model path)
-  tokenizer_path: ${oc.select:actor_rollout_ref.model.path,"~/models/deepseek-llm-7b-chat"}
+  tokenizer_path: ${oc.select:.path,"~/models/deepseek-llm-7b-chat"}
 
   # Hugging Face config override
   override_config: {}

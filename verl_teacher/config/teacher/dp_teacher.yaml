@@ -17,7 +17,7 @@ defaults:
   - _self_
 
 # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
-_target_: verl.workers.config.FSDPTeacherConfig
+_target_: verl_teacher.workers.config.FSDPTeacherConfig
 
 # distribution strategy. Options: fsdp (deprecating), fsdp2
 strategy: fsdp
@@ -26,7 +26,7 @@ strategy: fsdp
 model:
 
   # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
-  _target_: verl.workers.config.FSDPTeacherModelCfg
+  _target_: verl_teacher.workers.config.FSDPTeacherModelCfg
 
   # Whether to use shared memory for loading the model
   use_shm: False

@@ -35,17 +35,16 @@ from verl.trainer.ppo.ray_trainer import ResourcePoolManager
 from verl.utils.model import compute_position_id_with_mask, create_random_mask
 from verl.utils.torch_functional import logprobs_from_logits_naive
 from verl.workers.config import (
-	TeacherConfig,
 	FSDPEngineConfig,
 	FSDPOptimizerConfig,
 	HFModelConfig,
 	McoreEngineConfig,
 	McoreOptimizerConfig,
 )
-from verl.workers.fsdp_workers import TeacherTrainWorker
-from verl.workers.config.teacher import FSDPTeacherModelCfg
-from verl.utils.config import omega_conf_to_dataclass
 from verl.single_controller.ray.base import create_colocated_worker_cls
+
+from verl_teacher.utils.config import omega_conf_to_dataclass
+from verl_teacher.workers.fsdp_workers import TeacherTrainWorker
 
 from hydra import compose, initialize_config_dir  
 from hydra.core.global_hydra import GlobalHydra  
@@ -61,11 +60,10 @@ def test_teacher_train_worker(strategy):
 	GlobalHydra.instance().clear()  
 	try:  
 		# This requires an absolute path
-		with initialize_config_dir(config_dir=os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "verl_tool/trainer/config")):  
-			config = compose(config_name="ppo_trainer", overrides=[
-				"teacher_train.ppo_micro_batch_size_per_gpu=256",
-				"teacher_train.model.path=Qwen/Qwen2.5-1.5B-Instruct",
-				"teacher_train.model.tokenizer_path=Qwen/Qwen2.5-1.5B-Instruct",
+		with initialize_config_dir(config_dir=os.path.join(os.path.dirname(__file__), "..", "..", "config")):  
+			config = compose(config_name="teacher_runner", overrides=[
+				"teacher.ppo_micro_batch_size_per_gpu=256",
+				"teacher.model.path=Qwen/Qwen2.5-1.5B-Instruct"
 			])  
 	finally:  
 		GlobalHydra.instance().clear()
@@ -73,7 +71,7 @@ def test_teacher_train_worker(strategy):
 	ray.init()
 
 	resource_pool = RayResourcePool(process_on_nodes=[1])
-	teacher_cfg = omega_conf_to_dataclass(config.teacher_train)
+	teacher_cfg = omega_conf_to_dataclass(config.teacher)
 	class_dict = {str(Role.TeacherTrain): RayClassWithInitArgs(cls=TeacherTrainWorker, config=teacher_cfg)}
 	wg_dict = RayWorkerGroup(
 		resource_pool=resource_pool,

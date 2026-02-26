@@ -25,10 +25,11 @@ from tensordict import TensorDict
 from transformers import AutoConfig
 
 from verl import DataProto
-from verl.workers.config import FSDPTeacherConfig, FSDPOptimizerConfig
-from verl.workers.config.teacher import FSDPTeacherModelCfg
+from verl.workers.config import FSDPOptimizerConfig
 from verl.workers.config.engine import FSDPEngineConfig
-from verl.workers.fsdp_workers import TeacherTrainWorker
+
+from verl_teacher.workers.config import FSDPTeacherConfig, FSDPTeacherModelCfg
+from verl_teacher.workers.fsdp_workers import TeacherTrainWorker
 
 class TestTeacherTrainWorker(unittest.TestCase):
     @classmethod
@@ -151,7 +152,7 @@ class TestTeacherTrainWorker(unittest.TestCase):
         self.assertIn("metrics", result.meta_info)
         metrics = result.meta_info["metrics"]
 
-        expected_keys = ["teacher/vf_loss", "teacher/vf_clipfrac", "teacher/vpred_mean", "teacher/grad_norm"]
+        expected_keys = ["teacher/mse_loss", "teacher/grad_norm"]
         for key in expected_keys:
             self.assertIn(key, metrics)
 

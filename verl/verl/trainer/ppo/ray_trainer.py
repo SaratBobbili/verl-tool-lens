@@ -1170,6 +1170,19 @@ class RayPPOTrainer:
                         else:
                             reward_tensor, reward_extra_infos_dict = compute_reward(batch, self.reward_fn)
 
+                    # Compute per-group same-reward count (currently assuming single-turn) 
+                    if "index" in batch.non_tensor_batch:  
+                        index = batch.non_tensor_batch["index"]  
+                        # Sum rewards per rollout to get sequence-level rewards  
+                        seq_rewards = reward_tensor.sum(dim=-1)  # shape: (batch_size,)  
+                        # Group by prompt index  
+                        groups = {}  
+                        for i, idx in enumerate(index):  
+                            groups.setdefault(idx, []).append(seq_rewards[i].item())  
+                        # Count groups where all rewards are identical  
+                        same_reward_groups = sum(1 for vals in groups.values() if len(set(vals)) == 1)
+                        metrics["data/zero_adv_ratio"] = same_reward_groups/len(groups) if len(groups) > 0 else 0.0
+
                     # recompute old_log_probs
                     with marked_timer("old_log_prob", timing_raw, color="blue"):
                         old_log_prob = self.actor_rollout_wg.compute_log_prob(batch)

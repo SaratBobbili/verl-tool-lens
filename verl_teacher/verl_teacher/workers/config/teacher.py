@@ -21,10 +21,7 @@ from omegaconf import MISSING
 from verl.base_config import BaseConfig
 from verl.trainer.config import BaseModelConfig, CheckpointConfig
 from verl.utils.profiler import ProfilerConfig
-
-from .engine import FSDPEngineConfig, McoreEngineConfig
-from .model import HFModelConfig
-from .optimizer import OptimizerConfig
+from verl.workers.config import FSDPEngineConfig, McoreEngineConfig, HFModelConfig, OptimizerConfig
 
 __all__ = ["TeacherConfig", "FSDPTeacherConfig", "McoreTeacherConfig", "FSDPTeacherModelCfg"]
 
@@ -65,6 +62,8 @@ class TeacherConfig(BaseConfig):
     strategy: str = MISSING
     ppo_micro_batch_size_per_gpu: Optional[int] = None
     enable: Optional[bool] = None
+    trainer_enable: Optional[bool] = None
+    scorer_enable: Optional[bool] = None
     rollout_n: int = 1
     ppo_mini_batch_size: int = 1
     use_dynamic_bsz: bool = False

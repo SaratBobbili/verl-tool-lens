@@ -25,11 +25,11 @@ from tensordict import TensorDict
 from transformers import AutoConfig
 
 from verl import DataProto
-from verl.workers.config import FSDPTeacherConfig, FSDPOptimizerConfig
-from verl.workers.config.teacher import FSDPTeacherModelCfg
+from verl.workers.config import FSDPOptimizerConfig
 from verl.workers.config.engine import FSDPEngineConfig
-from verl.workers.fsdp_workers import TeacherScoreWorker
 
+from verl_teacher.workers.config import FSDPTeacherConfig, FSDPTeacherModelCfg
+from verl_teacher.workers.fsdp_workers import TeacherScoreWorker
 
 class TestTeacherScoreWorker(unittest.TestCase):
     @classmethod

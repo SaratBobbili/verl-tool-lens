@@ -9,29 +9,32 @@ defaults:
 
   # <folder_name>@<field_name>.<field_name>: <yaml_file_name>
   # actor_rollout_ref.actor: trainer/config/actor/dp_actor.yaml
-  - actor@actor_rollout_ref.actor: dp_actor
+  # - actor@actor_rollout_ref.actor: dp_actor
 
   # data: trainer/config/data/legacy_data.yaml
-  - data@data: legacy_data
+  - data@data: legacy_data # need
 
   # Reference model config.
   # Reference model will be enabled when actor.use_kl_loss or/and algorithm.use_kl_in_reward is/are True.
-  - ref@actor_rollout_ref.ref: dp_ref
+  # - ref@actor_rollout_ref.ref: dp_ref
 
   # Rollout model config.
-  - rollout@actor_rollout_ref.rollout: rollout
+  # - rollout@actor_rollout_ref.rollout: rollout
 
   # Model config.
-  - model@actor_rollout_ref.model: hf_model
+  # - model@actor_rollout_ref.model: hf_model
 
   # Critic model config.
-  - critic@critic: dp_critic
+  # - critic@critic: dp_critic
+
+  # Teacher model config (covers both TeacherTrain and TeacherScore).
+  - teacher@teacher: dp_teacher # need
 
   # Reward model config.
-  - reward_model@reward_model: dp_reward_model
+  # - reward_model@reward_model: dp_reward_model
 
   # VerlTool Agent
-  - verltool@actor_rollout_ref.agent: agent.yaml
+  # - verltool@actor_rollout_ref.agent: agent.yaml
 
   # load the reference default config, then apply the fields in the current yaml
   # self config override anything above
