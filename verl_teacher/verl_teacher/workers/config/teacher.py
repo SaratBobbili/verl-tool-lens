@@ -34,16 +34,16 @@ class TeacherConfig(BaseConfig):
 
     Args:
         strategy (str): Strategy used for teacher model training (fsdp, fsdp2, megatron).
-        ppo_micro_batch_size_per_gpu (int): Local per-GPU micro batch size.
+        micro_batch_size_per_gpu (int): Local per-GPU micro batch size.
         rollout_n (int): Number of rollouts per update (mirrors actor rollout_n).
         optim (Dict[str, Any]): Optimizer configuration including lr, weight_decay, etc.
         model (Dict[str, Any]): Model configuration including path, tokenizer_path, etc.
-        ppo_mini_batch_size (int): PPO mini-batch size per update.
-        ppo_micro_batch_size (Optional[int]): Global micro batch size (deprecated).
+        mini_batch_size (int): PPO mini-batch size per update.
+        micro_batch_size (Optional[int]): Global micro batch size (deprecated).
         use_dynamic_bsz (bool): Whether to automatically adjust batch size at runtime.
-        ppo_max_token_len_per_gpu (int): Max tokens per GPU in one PPO batch.
+        max_token_len_per_gpu (int): Max tokens per GPU in one PPO batch.
         forward_max_token_len_per_gpu (int): Max token length per GPU in forward pass.
-        ppo_epochs (int): Number of PPO epochs per batch.
+        epochs (int): Number of PPO epochs per batch.
         shuffle (bool): Shuffle training data across PPO epochs.
         cliprange_value (float): PPO value function clipping range.
         loss_agg_mode (str): Loss aggregation mode.
@@ -53,31 +53,31 @@ class TeacherConfig(BaseConfig):
     """
 
     _mutable_fields = BaseConfig._mutable_fields | {
-        "ppo_micro_batch_size_per_gpu",
-        "ppo_mini_batch_size",
-        "ppo_micro_batch_size",
+        "micro_batch_size_per_gpu",
+        "mini_batch_size",
+        "micro_batch_size",
         "model_config",
     }
 
     strategy: str = MISSING
-    ppo_micro_batch_size_per_gpu: Optional[int] = None
+    micro_batch_size_per_gpu: Optional[int] = None
     enable: Optional[bool] = None
     trainer_enable: Optional[bool] = None
     scorer_enable: Optional[bool] = None
     rollout_n: int = 1
-    ppo_mini_batch_size: int = 1
+    mini_batch_size: int = 1
     use_dynamic_bsz: bool = False
-    ppo_max_token_len_per_gpu: int = 32768
+    max_token_len_per_gpu: int = 32768
     # deprecate this
     forward_max_token_len_per_gpu: int = 32768
-    ppo_infer_micro_batch_size_per_gpu: Optional[int] = None
-    ppo_infer_max_token_len_per_gpu: int = 32768
-    ppo_epochs: int = 1
+    infer_micro_batch_size_per_gpu: Optional[int] = None
+    infer_max_token_len_per_gpu: int = 32768
+    epochs: int = 1
     data_loader_seed: int = 1
     shuffle: bool = True
     cliprange_value: float = 0.5
     loss_agg_mode: str = "token-mean"
-    ppo_micro_batch_size: Optional[int] = None
+    micro_batch_size: Optional[int] = None
     engine: BaseConfig = field(default_factory=BaseConfig)
     optim: OptimizerConfig = field(default_factory=OptimizerConfig)
     # deprecate model to favor model_config
@@ -95,13 +95,13 @@ class TeacherConfig(BaseConfig):
             self.model_config = self.model
 
         if not self.use_dynamic_bsz:
-            self._check_mutually_exclusive(self.ppo_micro_batch_size, self.ppo_micro_batch_size_per_gpu, "teacher")
+            self._check_mutually_exclusive(self.micro_batch_size, self.micro_batch_size_per_gpu, "teacher")
 
-            if self.ppo_micro_batch_size is not None:
-                if self.ppo_mini_batch_size % self.ppo_micro_batch_size != 0:
+            if self.micro_batch_size is not None:
+                if self.mini_batch_size % self.micro_batch_size != 0:
                     raise ValueError(
-                        f"[teacher] ppo_mini_batch_size ({self.ppo_mini_batch_size}) must be divisible by "
-                        f"ppo_micro_batch_size ({self.ppo_micro_batch_size})"
+                        f"[teacher] mini_batch_size ({self.mini_batch_size}) must be divisible by "
+                        f"micro_batch_size ({self.micro_batch_size})"
                     )
 
     def validate(self, n_gpus: int, train_batch_size: int):
@@ -112,10 +112,10 @@ class TeacherConfig(BaseConfig):
             train_batch_size: Training batch size from data config
         """
         if not self.use_dynamic_bsz:
-            if train_batch_size < self.ppo_mini_batch_size:
+            if train_batch_size < self.mini_batch_size:
                 raise ValueError(
                     f"train_batch_size ({train_batch_size}) must be >= "
-                    f"teacher.ppo_mini_batch_size ({self.ppo_mini_batch_size})"
+                    f"teacher.mini_batch_size ({self.mini_batch_size})"
                 )
 
     @staticmethod
@@ -211,10 +211,10 @@ class FSDPTeacherConfig(TeacherConfig):
 
         if not self.use_dynamic_bsz:
             sp_size = self.ulysses_sequence_parallel_size
-            if self.ppo_micro_batch_size is not None:
-                if self.ppo_micro_batch_size * sp_size < n_gpus:
+            if self.micro_batch_size is not None:
+                if self.micro_batch_size * sp_size < n_gpus:
                     raise ValueError(
-                        f"teacher.ppo_micro_batch_size ({self.ppo_micro_batch_size}) * "
+                        f"teacher.micro_batch_size ({self.micro_batch_size}) * "
                         f"ulysses_sequence_parallel_size ({sp_size}) must be >= n_gpus ({n_gpus})"
                     )
 
@@ -235,6 +235,7 @@ class FSDPTeacherModelCfg(BaseModelConfig):
         target_modules (Union[str, List[str]]): LoRA target modules: "all-linear" or list of layer names.
     """
 
+    strategy: str = "fsdp"
     use_shm: bool = False
     enable_activation_offload: bool = False
     use_remove_padding: bool = False

@@ -73,10 +73,10 @@ class TestTeacherTrainWorker(unittest.TestCase):
 
         self.config = FSDPTeacherConfig(
             strategy="fsdp2",
-            ppo_mini_batch_size=4,
-            ppo_micro_batch_size_per_gpu=2,
+            mini_batch_size=4,
+            micro_batch_size_per_gpu=2,
             forward_micro_batch_size_per_gpu=2,
-            ppo_epochs=1,
+            epochs=1,
             cliprange_value=0.5,
             grad_clip=1.0,
             use_dynamic_bsz=False,
@@ -103,20 +103,16 @@ class TestTeacherTrainWorker(unittest.TestCase):
         input_ids = torch.randint(0, 1000, (batch_size, seq_len), dtype=torch.long)
         attention_mask = torch.ones(batch_size, seq_len, dtype=torch.long)
         position_ids = torch.arange(seq_len).unsqueeze(0).expand(batch_size, -1)
-        responses = torch.randint(0, 1000, (batch_size, response_len), dtype=torch.long)
         response_mask = torch.ones(batch_size, response_len, dtype=torch.float)
         scores = torch.randn(batch_size, response_len, dtype=torch.float)
-        returns = torch.randn(batch_size, response_len, dtype=torch.float)
 
         batch = TensorDict(
             {
                 "input_ids": input_ids,
                 "attention_mask": attention_mask,
                 "position_ids": position_ids,
-                "responses": responses,
                 "response_mask": response_mask,
                 "scores": scores,
-                "returns": returns,
             },
             batch_size=[batch_size],
         )
@@ -198,8 +194,8 @@ class TestTeacherTrainWorker(unittest.TestCase):
                 },
                 "optim": {"lr": 1e-4, "type": "AdamW"},
                 "strategy": "fsdp",
-                "ppo_mini_batch_size": 1,
-                "ppo_epochs": 1,
+                "mini_batch_size": 1,
+                "epochs": 1,
                 "rollout_n": 1,
                 "checkpoint": {"save_contents": [], "load_contents": []},
             }

@@ -40,6 +40,13 @@ defaults:
   # self config override anything above
   - _self_
 
+# If data_source is "offline", the teacher will use data taken from step records from previous training
+# runs. You will have to specify the path to the offline data under offline_data_path. If data_source 
+# is "online", the teacher will wait for data to come in from student processes. In that case,
+# offline_data_path will be ignored.
+data_source: offline
+offline_data_path: null
+
 # config for actor, rollout and reference model
 actor_rollout_ref:
 
@@ -334,6 +341,9 @@ ray_kwargs:
 
   # configs related to ray initialization
   ray_init:
+
+    # Namespace to allow actors with the same name to be distinguished from one another
+    namespace: null
 
     # Number of CPUs for Ray. Use a fixed number instead of null when using SLURM.
     num_cpus: null

@@ -24,13 +24,14 @@ from omegaconf import OmegaConf
 
 from verl.experimental.dataset.sampler import AbstractSampler
 from verl.trainer.constants_ppo import get_ppo_ray_runtime_env
-from .teacher_runner import TeacherRunner
-from utils.config import validate_config
 from verl.utils.device import is_cuda_available
 from verl.utils.import_utils import load_extern_type
 from verl.utils import hf_processor, hf_tokenizer
 from verl.trainer.ppo.ray_trainer import Role
 from verl.single_controller.ray import RayWorkerGroup
+
+from verl_teacher.utils.config import validate_config
+from .teacher_runner import TeacherRunner
 
 
 @hydra.main(config_path="config", config_name="teacher_runner", version_base=None)
@@ -114,26 +115,15 @@ class TaskRunner:
         resource_pool_spec = {
             global_pool_id: [config.trainer.n_gpus_per_node] * config.trainer.nnodes,
         }
-        # TODO Here you can use the new registration method to support dynamic registration of roles
-        if config.reward_model.enable_resource_pool:
-            if config.reward_model.n_gpus_per_node <= 0:
-                raise ValueError("config.reward_model.n_gpus_per_node must be greater than 0")
-            if config.reward_model.nnodes <= 0:
-                raise ValueError("config.reward_model.nnodes must be greater than 0")
-
-            reward_pool = [config.reward_model.n_gpus_per_node] * config.reward_model.nnodes
-            resource_pool_spec["reward_pool"] = reward_pool
 
         # Add teacher worker groups to the resource pool spec if teacher is enabled
         teacher_cfg = getattr(config, "teacher", None)
-        if teacher_cfg is not None:
-            if teacher_cfg.get("trainer_enable", False):
-                self.mapping[Role.TeacherTrain] = global_pool_id
-            if teacher_cfg.get("scorer_enable", False):
-                self.mapping[Role.TeacherScore] = global_pool_id
+        assert teacher_cfg is not None, "teacher config not found"
+        if teacher_cfg.get("trainer_enable", False):
+            self.mapping[Role.TeacherTrain] = global_pool_id
+        if teacher_cfg.get("scorer_enable", False):
+            self.mapping[Role.TeacherScore] = global_pool_id
 
-        self.mapping[Role.ActorRollout] = global_pool_id
-        self.mapping[Role.Critic] = global_pool_id
         from verl.trainer.ppo.ray_trainer import ResourcePoolManager
 
         resource_pool_manager = ResourcePoolManager(resource_pool_spec=resource_pool_spec, mapping=self.mapping)
@@ -142,43 +132,25 @@ class TaskRunner:
     def add_teacher_workers(self, config):
         # We also create the ray_worker_group_cls here, since in main_ppo.py it is created in add_actor_rollout_worker
         # but we do not create that worker here
-        if config.teacher.model.strategy in {"fsdp", "fsdp2"}:
-            from verl.workers.fsdp_workers import ActorRolloutRefWorker, AsyncActorRolloutRefWorker
-            actor_rollout_cls = (
-                AsyncActorRolloutRefWorker
-                if config.teacher.rollout.mode == "async"
-                else ActorRolloutRefWorker
-            )
-            ray_worker_group_cls = RayWorkerGroup
-        elif config.teacher.model.strategy == "megatron":
-            raise NotImplementedError("Megatron strategy for teacher is not implemented")
-            from verl.workers.megatron_workers import ActorRolloutRefWorker, AsyncActorRolloutRefWorker
-            actor_rollout_cls = (
-                AsyncActorRolloutRefWorker
-                if config.teacher.rollout.mode == "async"
-                else ActorRolloutRefWorker
-            )
-            ray_worker_group_cls = RayWorkerGroup
-        else:
-            raise NotImplementedError
+        ray_worker_group_cls = RayWorkerGroup
 
         """Add teacher workers to role mapping."""
         if getattr(config, "teacher", {}).get("trainer_enable", False):
             # Pick implementation based on strategy (mirror critic)
             if config.teacher.strategy in {"fsdp", "fsdp2"}:
-                from verl.workers.fsdp_workers import TeacherTrainWorker
+                from verl_teacher.workers.fsdp_workers import TeacherTrainWorker
             elif config.teacher.strategy == "megatron":
                 raise NotImplementedError("Megatron teacher trainer is not implemented")
-                from verl.workers.megatron_workers import TeacherTrainWorker  # optional
+                from verl_teacher.workers.megatron_workers import TeacherTrainWorker  # optional
             else:
                 raise NotImplementedError
             self.role_worker_mapping[Role.TeacherTrain] = ray.remote(TeacherTrainWorker)
         if getattr(config, "teacher", {}).get("scorer_enable", False):
             if config.teacher.strategy in {"fsdp", "fsdp2"}:
-                from verl.workers.fsdp_workers import TeacherScoreWorker
+                from verl_teacher.workers.fsdp_workers import TeacherScoreWorker
             elif config.teacher.strategy == "megatron":
                 raise NotImplementedError("Megatron teacher scorer is not implemented")
-                from verl.workers.megatron_workers import TeacherScoreWorker  # optional
+                from verl_teacher.workers.megatron_workers import TeacherScoreWorker  # optional
             else:
                 raise NotImplementedError
             self.role_worker_mapping[Role.TeacherScore] = ray.remote(TeacherScoreWorker)
@@ -230,9 +202,16 @@ class TaskRunner:
         from verl.utils.dataset.rl_dataset import collate_fn
 
         # Create training and validation datasets (this will mirror what the students have).
-        train_dataset = create_rl_dataset(config.data.train_files, config.data, tokenizer, processor, is_train=True)
-        val_dataset = create_rl_dataset(config.data.val_files, config.data, tokenizer, processor, is_train=False)
-        train_sampler = create_rl_sampler(config.data, train_dataset)
+        if config.data_source == "online":
+            train_dataset = create_rl_dataset(config.data.train_files, config.data, tokenizer, processor, is_train=True)
+            val_dataset = create_rl_dataset(config.data.val_files, config.data, tokenizer, processor, is_train=False)
+            train_sampler = create_rl_sampler(config.data, train_dataset)
+        elif config.data_source == "offline":
+            train_dataset = None
+            val_dataset = None
+            train_sampler = None
+        else:
+            raise ValueError(f"Unsupported data source: {config.data_source}")
 
         # Initialize the PPO trainer.
         trainer = TeacherRunner(

@@ -7,12 +7,8 @@ rollout_n: ${oc.select:actor_rollout_ref.rollout.n,1}
 # fsdp or fsdp2 strategy used for teacher model training
 strategy: ???
 
-# TODO: Remove
-# whether to enable the teacher worker (false by default).
-enable: false
-
 # Whether to run the TeacherTrain worker (does not require TeacherScore worker to be running)
-trainer_enable: False
+trainer_enable: True
 
 # Whether to run the TeacherScore worker (can be used on its own for debugging, but for normal
 # use the trainer should be enabled as well so that the teacher can learn to give useful outputs)
@@ -56,25 +52,25 @@ model:
   trust_remote_code: ${oc.select:actor_rollout_ref.model.trust_remote_code,false}
 
 # PPO mini-batch size per update
-ppo_mini_batch_size: ${oc.select:actor_rollout_ref.actor.ppo_mini_batch_size,256}
+mini_batch_size: ${oc.select:actor_rollout_ref.actor.mini_batch_size,256}
 
 # [Deprecated] Global micro batch size
-ppo_micro_batch_size: null
+micro_batch_size: null
 
 # Local per-GPU micro batch size
-ppo_micro_batch_size_per_gpu: ${oc.select:.ppo_micro_batch_size,null}
+micro_batch_size_per_gpu: ${oc.select:.micro_batch_size,null}
 
 # Whether to automatically adjust batch size at runtime
 use_dynamic_bsz: ${oc.select:actor_rollout_ref.actor.use_dynamic_bsz,false}
 
 # Max tokens per GPU in one PPO batch (doubled for teacher)
-ppo_max_token_len_per_gpu: 32768
+max_token_len_per_gpu: 32768
 
 # Max token length per GPU in forward pass
-forward_max_token_len_per_gpu: ${.ppo_max_token_len_per_gpu}
+forward_max_token_len_per_gpu: ${.max_token_len_per_gpu}
 
 # Number of PPO epochs per batch
-ppo_epochs: ${oc.select:actor_rollout_ref.actor.ppo_epochs,1}
+epochs: ${oc.select:actor_rollout_ref.actor.epochs,1}
 
 # Shuffle training data across PPO epochs
 shuffle: ${oc.select:actor_rollout_ref.actor.shuffle,false}
@@ -93,7 +89,7 @@ checkpoint:
 
   # What to include in saved checkpoints
   # with 'hf_model' you can save whole model as hf format, now only use sharded model checkpoint to save space
-  save_contents: ['model', 'optimizer', 'extra']
+  save_contents: ['model', 'optimizer', 'extra', 'hf_model']
 
   # What to include when loading checkpoints
   load_contents: ${.save_contents}

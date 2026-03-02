@@ -60,9 +60,9 @@ def test_teacher_train_worker(strategy):
 	GlobalHydra.instance().clear()  
 	try:  
 		# This requires an absolute path
-		with initialize_config_dir(config_dir=os.path.join(os.path.dirname(__file__), "..", "..", "config")):  
+		with initialize_config_dir(config_dir=os.path.join(os.path.dirname(__file__), "..", "..", "verl_teacher", "config")):  
 			config = compose(config_name="teacher_runner", overrides=[
-				"teacher.ppo_micro_batch_size_per_gpu=256",
+				"teacher.micro_batch_size_per_gpu=256",
 				"teacher.model.path=Qwen/Qwen2.5-1.5B-Instruct"
 			])  
 	finally:  
@@ -123,8 +123,8 @@ def test_teacher_train_worker(strategy):
 			"input_ids": input_ids,
 			"attention_mask": attention_mask,
 			"position_ids": position_ids,
-			"responses": responses,
-			"response_mask": response_mask,
+			"responses": responses, # Not actually used
+			"response_mask": response_mask, # Not actually used
 		},
 		meta_info={"temperature": 1.0, "global_token_num": global_token_num},
 	)
@@ -133,8 +133,8 @@ def test_teacher_train_worker(strategy):
 	data.batch["scores"] = torch.rand_like(responses, dtype=torch.float32)
 
 	# update again
-	ppo_metrics = wg.update_teacher(data)
-	print(ppo_metrics)
+	metrics = wg.update_teacher(data)
+	print(metrics)
 
 	# test saving checkpoint
 	save_path = os.path.join(os.path.dirname(__file__), "test_checkpoint")

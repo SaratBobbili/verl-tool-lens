@@ -73,10 +73,10 @@ class TestTeacherScoreWorker(unittest.TestCase):
 
         self.config = FSDPTeacherConfig(
             strategy="fsdp2",
-            ppo_mini_batch_size=4,
-            ppo_micro_batch_size_per_gpu=2,
+            mini_batch_size=4,
+            micro_batch_size_per_gpu=2,
             forward_micro_batch_size_per_gpu=2,
-            ppo_epochs=1,
+            epochs=1,
             cliprange_value=0.5,
             grad_clip=1.0,
             use_dynamic_bsz=False,
@@ -137,7 +137,8 @@ class TestTeacherScoreWorker(unittest.TestCase):
         worker = TeacherScoreWorker(self.config)
         worker.init_model()
 
-        data = self._create_test_data_for_compute_scores()
+        batch_size = 2
+        data = self._create_test_data_for_compute_scores(batch_size=batch_size)
 
         result = worker.compute_scores(data)
 
@@ -145,8 +146,7 @@ class TestTeacherScoreWorker(unittest.TestCase):
         self.assertIn("scores", result.batch)
         scores = result.batch["scores"]
 
-        batch_size, response_len = 2, 5
-        self.assertEqual(scores.shape, (batch_size, response_len))
+        self.assertEqual(scores.shape, (batch_size, 1))
 
         self.assertTrue(torch.isfinite(scores).all())
 
@@ -185,8 +185,8 @@ class TestTeacherScoreWorker(unittest.TestCase):
                 },
                 "optim": {"lr": 1e-4, "type": "AdamW"},
                 "strategy": "fsdp",
-                "ppo_mini_batch_size": 1,
-                "ppo_epochs": 1,
+                "mini_batch_size": 1,
+                "epochs": 1,
                 "rollout_n": 1,
                 "checkpoint": {"save_contents": [], "load_contents": []},
             }

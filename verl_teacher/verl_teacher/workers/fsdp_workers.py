@@ -187,22 +187,22 @@ class TeacherTrainWorker(Worker, DistProfilerExtension):
         self._is_offload_optimizer = self.config.model.fsdp_config.optimizer_offload
 
         # normalize config
-        self.config.ppo_mini_batch_size *= self.config.rollout_n
-        self.config.ppo_mini_batch_size //= torch.distributed.get_world_size() // self.ulysses_sequence_parallel_size
-        if self.config.ppo_micro_batch_size is not None:
-            self.config.ppo_micro_batch_size //= (
+        self.config.mini_batch_size *= self.config.rollout_n
+        self.config.mini_batch_size //= torch.distributed.get_world_size() // self.ulysses_sequence_parallel_size
+        if self.config.micro_batch_size is not None:
+            self.config.micro_batch_size //= (
                 torch.distributed.get_world_size() // self.ulysses_sequence_parallel_size
             )
-            self.config.ppo_micro_batch_size_per_gpu = self.config.ppo_micro_batch_size
+            self.config.micro_batch_size_per_gpu = self.config.micro_batch_size
 
-        if self.config.ppo_micro_batch_size_per_gpu is not None:
-            assert self.config.ppo_mini_batch_size % self.config.ppo_micro_batch_size_per_gpu == 0, (
-                f"normalized ppo_mini_batch_size {self.config.ppo_mini_batch_size} should be divisible by "
-                f"ppo_micro_batch_size_per_gpu {self.config.ppo_micro_batch_size_per_gpu}"
+        if self.config.micro_batch_size_per_gpu is not None:
+            assert self.config.mini_batch_size % self.config.micro_batch_size_per_gpu == 0, (
+                f"normalized mini_batch_size {self.config.mini_batch_size} should be divisible by "
+                f"micro_batch_size_per_gpu {self.config.micro_batch_size_per_gpu}"
             )
-            assert self.config.ppo_mini_batch_size // self.config.ppo_micro_batch_size_per_gpu > 0, (
-                f"normalized ppo_mini_batch_size {self.config.ppo_mini_batch_size} should be larger than "
-                f"ppo_micro_batch_size_per_gpu {self.config.ppo_micro_batch_size_per_gpu}"
+            assert self.config.mini_batch_size // self.config.micro_batch_size_per_gpu > 0, (
+                f"normalized mini_batch_size {self.config.mini_batch_size} should be larger than "
+                f"micro_batch_size_per_gpu {self.config.micro_batch_size_per_gpu}"
             )
         self._is_lora = (
             self.config.model.get("lora_adapter_path") is not None or self.config.model.get("lora_rank", 0) > 0
@@ -493,7 +493,7 @@ class TeacherTrainWorker(Worker, DistProfilerExtension):
 
             global_num_tokens = data.meta_info["global_token_num"]
             estimated_flops, promised_flops = self.flops_counter.estimate_flops(global_num_tokens, delta_time)
-            metrics["perf/mfu/teacher"] = estimated_flops * self.config.ppo_epochs / promised_flops / self.world_size
+            metrics["perf/mfu/teacher"] = estimated_flops * self.config.epochs / promised_flops / self.world_size
 
             lr = self.teacher_lr_scheduler.get_last_lr()[0]
             metrics["teacher/lr"] = lr
@@ -580,7 +580,7 @@ class TeacherScoreWorker(Worker, DistProfilerExtension):
         self._is_offload_param = self.config.model.fsdp_config.param_offload
 
         # normalize config (inference-only: only forward_micro_batch_size needed)
-        if self.config.ppo_micro_batch_size is not None:
+        if self.config.micro_batch_size is not None:
             self.config.forward_micro_batch_size //= (
                 torch.distributed.get_world_size() // self.ulysses_sequence_parallel_size
             )

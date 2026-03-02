@@ -25,6 +25,8 @@ strategy: fsdp
 # model config for the teacher
 model:
 
+  strategy: fsdp
+
   # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
   _target_: verl_teacher.workers.config.FSDPTeacherModelCfg
 
@@ -50,10 +52,13 @@ model:
   target_modules: all-linear
 
 # Forward-only batch size during inference (global)
-forward_micro_batch_size: ${oc.select:.ppo_micro_batch_size,null}
+forward_micro_batch_size: ${oc.select:.micro_batch_size,null}
 
 # Forward-only batch size during inference (per GPU)
-forward_micro_batch_size_per_gpu: ${oc.select:.ppo_micro_batch_size_per_gpu,null}
+forward_micro_batch_size_per_gpu: ${oc.select:.micro_batch_size_per_gpu,null}
+
+# Batch size during training (per GPU)
+micro_batch_size_per_gpu: ${oc.select:.micro_batch_size_per_gpu,null}
 
 # Sequence parallelism size for Ulysses-style model parallelism
 ulysses_sequence_parallel_size: 1

@@ -76,7 +76,6 @@ class DataParallelTeacher(BaseTeacher):
         self.version = 0
 
     def _forward_micro_batch(self, micro_batch):
-        # response_length = micro_batch["responses"].size(-1)
         # TODO: Setting response_length to 1 will give us the desired result of returning the last token's score,
         # but in the future we will remove response_length entirely and probably use pooling
         response_length = 1
@@ -184,9 +183,9 @@ class DataParallelTeacher(BaseTeacher):
         use_dynamic_bsz = data.meta_info["use_dynamic_bsz"]
         has_multi_modal_inputs = "multi_modal_inputs" in data.non_tensor_batch.keys()
         select_keys = (
-            ["responses", "input_ids", "response_mask", "attention_mask", "position_ids"]
+            ["input_ids", "response_mask", "attention_mask", "position_ids"]
             if "response_mask" in data.batch
-            else ["responses", "input_ids", "attention_mask", "position_ids"]
+            else ["input_ids", "attention_mask", "position_ids"]
         )
         non_tensor_select_keys = ["multi_modal_inputs"] if has_multi_modal_inputs else []
 
@@ -206,22 +205,9 @@ class DataParallelTeacher(BaseTeacher):
                 scores = self._forward_micro_batch(model_inputs)
             scores_lst.append(scores)
         scores = torch.concat(scores_lst, dim=0)
-
+        
         if use_dynamic_bsz:
             scores = restore_dynamic_batch(scores, batch_idx_list)
-        # TODO: response_mask will never be an issue for the teacher since it only uses prompts
-        if "response_mask" in data.batch:
-            response_mask = data.batch["response_mask"]
-            response_mask = response_mask.to(scores.device)
-            scores = scores * response_mask  # Only action tokens have scores
-        
-        # # Taking only the last non-padding response token (TODO: not working)
-        # if scores.dim() == 2:
-        #     attn = data.batch["attention_mask"].to(scores.device)
-        #     idx = attn.long().sum(dim=1) - 1
-        #     idx = idx.clamp(min=0)
-        #     scores = scores[torch.arange(scores.size(0), device=scores.device), idx]  # [B]
-
         return scores
 
     @GPUMemoryLogger(role="dp teacher", logger=logger)
@@ -232,7 +218,7 @@ class DataParallelTeacher(BaseTeacher):
         metrics = {}
 
         # TODO: Remove response_mask
-        select_keys = ["input_ids", "responses", "response_mask", "attention_mask", "position_ids", "scores"]
+        select_keys = ["input_ids", "response_mask", "attention_mask", "position_ids", "scores"]
         has_multi_modal_inputs = "multi_modal_inputs" in data.non_tensor_batch.keys()
         non_tensor_select_keys = ["multi_modal_inputs"] if has_multi_modal_inputs else []
 
@@ -240,18 +226,18 @@ class DataParallelTeacher(BaseTeacher):
 
         # Split to make minibatch iterator for updating the actor
         # See PPO paper for details. https://arxiv.org/abs/1707.06347
-        mini_batches = data.split(self.config.ppo_mini_batch_size)
+        mini_batches = data.split(self.config.mini_batch_size)
 
-        for _ in range(self.config.ppo_epochs):
+        for _ in range(self.config.epochs):
             for batch_idx, mini_batch in enumerate(mini_batches):
                 if self.config.use_dynamic_bsz:
-                    max_token_len = self.config.ppo_max_token_len_per_gpu * self.ulysses_sequence_parallel_size
+                    max_token_len = self.config.max_token_len_per_gpu * self.ulysses_sequence_parallel_size
                     micro_batches, _ = prepare_dynamic_batch(mini_batch, max_token_len=max_token_len)
                 else:
                     self.gradient_accumulation = (
-                        self.config.ppo_mini_batch_size // self.config.ppo_micro_batch_size_per_gpu
+                        self.config.mini_batch_size // self.config.micro_batch_size_per_gpu
                     )
-                    micro_batches = mini_batch.split(self.config.ppo_micro_batch_size_per_gpu)
+                    micro_batches = mini_batch.split(self.config.micro_batch_size_per_gpu)
 
                 self.teacher_optimizer.zero_grad()
 
@@ -268,7 +254,7 @@ class DataParallelTeacher(BaseTeacher):
 
                     if self.config.use_dynamic_bsz:
                         # relative to the dynamic bsz
-                        loss_scale_factor = response_mask.shape[0] / self.config.ppo_mini_batch_size
+                        loss_scale_factor = response_mask.shape[0] / self.config.mini_batch_size
                         loss = loss * loss_scale_factor
                     else:
                         loss_scale_factor = 1 / self.gradient_accumulation
@@ -278,7 +264,7 @@ class DataParallelTeacher(BaseTeacher):
 
                     micro_batch_metrics.update(
                         {
-                            "teacher/mse_loss": loss.detach().item() * loss_scale_factor,
+                            "teacher/mse_loss": loss.detach().item(),
                         }
                     )
 
