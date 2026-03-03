@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -J 1.5b-mt6
+#SBATCH -J fsdp2
 #SBATCH -p gpu-research
 #SBATCH --qos=olympus-research-gpu
 #SBATCH --gres=gpu:a100:4
