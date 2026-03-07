@@ -21,6 +21,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("file_path", type=str, help="Path to the validation data file (JSONL format)")
     ap.add_argument("model_path", type=str, help="Path to the teacher model")
+    ap.add_argument("--routing_threshold", type=float, default=None, help="Threshold for routing decisions (Must be used on eval results with one sample per prompt)")
     args = ap.parse_args()
 
     """Set up distributed environment"""
@@ -98,10 +99,27 @@ if __name__ == "__main__":
 
     result = worker.compute_scores(data)
     pred_scores = result.batch["scores"]
-    error = torch.abs(pred_scores - scores)
-    mae = torch.mean(error).item()
-    print(f"Mean Absolute Error on validation set: {mae:.4f}")
-    breakpoint()  # For inspection of pred_scores vs. true scores
+
+    if args.routing_threshold is not None:
+        assert torch.logical_or(scores == 0.0, scores == 1.0).all(), "Routing threshold evaluation requires binary scores (0 or 1)"
+        # If a routing threshold is provided, we can compute the percentage of samples that would be escalated
+        escalated = pred_scores > args.routing_threshold
+        percent_escalated = escalated.float().mean().item() * 100
+        print(f"With a routing threshold of {args.routing_threshold}, {percent_escalated:.2f}% of samples would be escalated to a larger model.")
+        # Calculate what percentage of the escalated samples were actually correct (i.e. had a true score of 1)
+        correct_escalated = (escalated & (scores == 1.0)).float().sum().item()
+        percent_correct_escalated = correct_escalated / escalated.float().sum().item() * 100 if escalated.float().sum().item() > 0 else 0
+        print(f"Of the escalated samples, {percent_correct_escalated:.2f}% were actually correct.")
+        # Calculate what percentage of the non-escalated samples were actually correct (i.e. had a true score of 1)
+        non_escalated = ~escalated
+        correct_non_escalated = (non_escalated & (scores == 1.0)).float().sum().item()
+        percent_correct_non_escalated = correct_non_escalated / non_escalated.float().sum().item() * 100 if non_escalated.float().sum().item() > 0 else 0
+        print(f"Of the non-escalated samples, {percent_correct_non_escalated:.2f}% were actually correct.")
+    else:
+        error = torch.abs(pred_scores - scores)
+        mae = torch.mean(error).item()
+        print(f"Mean Absolute Error on validation set: {mae:.4f}")
+    breakpoint()
 
     """Clean up distributed environment"""
     if torch.distributed.is_initialized():
