@@ -39,27 +39,43 @@ from verl_teacher.workers.teacher import BaseTeacher
 logger = logging.getLogger(__file__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 
-def compute_mse_loss(
-    preds: torch.Tensor,
-    scores: torch.Tensor,
-):
-    """
-    Compute the MSE loss for regression with the teacher model.
+# def compute_mse_loss(
+#     preds: torch.Tensor,
+#     scores: torch.Tensor,
+# ):
+#     """
+#     Compute the MSE loss for regression with the teacher model.
 
-    Loosely based on compute_value_loss in core_algos
+#     Loosely based on compute_value_loss in core_algos
 
-    Args:
-        preds (torch.FloatTensor):
-            Predicted values from the value head, shape (batch_size, response_length).
-        scores (torch.FloatTensor):
-            Ground truth scores, shape (batch_size, response_length).
+#     Args:
+#         preds (torch.FloatTensor):
+#             Predicted values from the value head, shape (batch_size, response_length).
+#         scores (torch.FloatTensor):
+#             Ground truth scores, shape (batch_size, response_length).
 
-    Returns:
-        mse_loss (torch.FloatTensor):
-            A scalar tensor containing the aggregated MSE loss.
-    """
-    mse_loss = (preds - scores) ** 2
-    return mse_loss.mean()
+#     Returns:
+#         mse_loss (torch.FloatTensor):
+#             A scalar tensor containing the aggregated MSE loss.
+#     """
+#     mse_loss = (preds - scores) ** 2
+#     return mse_loss.mean()
+
+# def compute_bce_loss(
+#     logits: torch.Tensor,
+#     scores: torch.Tensor,
+# ):
+#     """
+#     Compute the BCE loss  with the teacher model.
+
+#     Args:
+#         logits (torch.FloatTensor):
+#             Predicted logits from the value head, shape (batch_size, num_outputs).
+#         scores (torch.FloatTensor):
+#             Empirical success probabilities, shape (batch_size, num_outputs).
+#     """
+#     bce_loss = nn.BCEWithLogitsLoss()(logits, scores)
+#     return bce_loss.mean()
 
 class DataParallelTeacher(BaseTeacher):
     def __init__(self, config, teacher_module: nn.Module, teacher_optimizer: optim.Optimizer):
@@ -72,13 +88,9 @@ class DataParallelTeacher(BaseTeacher):
         self.ulysses_sequence_parallel_size = self.config.get("ulysses_sequence_parallel_size", 1)
         self.device_name = get_device_name()
 
-        # version bookkeeping (currently only available with the AI-generated save/load below)
-        self.version = 0
+        self.loss_fn = nn.MSELoss(reduction="mean") if self.config.get("use_mse_loss", False) else nn.BCEWithLogitsLoss(reduction="mean")
 
     def _forward_micro_batch(self, micro_batch):
-        # TODO: Setting response_length to 1 will give us the desired result of returning the last token's score,
-        # but in the future we will remove response_length entirely and probably use pooling
-        response_length = 1
         multi_modal_inputs = {}
         if "multi_modal_inputs" in micro_batch.keys():
             from verl.utils.model import extract_multi_modal_inputs
@@ -93,6 +105,9 @@ class DataParallelTeacher(BaseTeacher):
                 position_ids = position_ids.transpose(0, 1)
 
             if self.use_remove_padding:
+                if self.config.model.get("use_mean_pooling", False):
+                    raise NotImplementedError("Mean pooling value head with remove padding has not been tested yet")
+                response_length = 1
                 input_ids_rmpad, indices, *_ = unpad_input(
                     input_ids.unsqueeze(-1), attention_mask
                 )  # input_ids_rmpad (total_nnz, ...)
@@ -154,7 +169,15 @@ class DataParallelTeacher(BaseTeacher):
                     scores = output[2]
                 else:
                     scores = output.logits
-                scores = scores[:, -response_length - 1 : -1].squeeze(-1)
+                
+                # The output shape will be (bsz, num_outputs) where num_outputs matches the number of student models
+                if not self.config.model.get("use_mean_pooling", False):
+                    response_lengths = attention_mask.sum(dim=1, keepdim=True)
+                    # In case we have any all-padding sequences, clamp the last token index to be at least 0 to avoid negative indexing
+                    last_token_idx = (response_lengths - 1).clamp_min(0).long()
+                    # TODO: Make this work for num_outputs > 1
+                    scores = torch.gather(scores, 1, last_token_idx.unsqueeze(-1))
+                    scores = scores.squeeze(-1) # (bsz, num_outputs)
             return scores
 
     def _optimizer_step(self):
@@ -203,6 +226,7 @@ class DataParallelTeacher(BaseTeacher):
             model_inputs = {**micro_batch.batch, **micro_batch.non_tensor_batch}
             with torch.no_grad():
                 scores = self._forward_micro_batch(model_inputs)
+                scores = torch.sigmoid(scores)  # restrict to [0, 1] range
             scores_lst.append(scores)
         scores = torch.concat(scores_lst, dim=0)
         
@@ -249,8 +273,9 @@ class DataParallelTeacher(BaseTeacher):
                     scores = model_inputs["scores"]
 
                     preds = self._forward_micro_batch(model_inputs)
-                    
-                    loss = compute_mse_loss(preds, scores)
+                    scores= scores.to(preds.dtype)  # ensure scores and preds have the same dtype for loss computation
+                    loss = self.loss_fn(preds, scores)
+                    assert loss.numel() == 1, "Loss should be a single scalar value after reduction"
 
                     if self.config.use_dynamic_bsz:
                         # relative to the dynamic bsz
@@ -262,9 +287,10 @@ class DataParallelTeacher(BaseTeacher):
 
                     loss.backward()
 
+                    loss_name = "mse_loss" if self.config.get("use_mse_loss", False) else "bce_loss"
                     micro_batch_metrics.update(
                         {
-                            "teacher/mse_loss": loss.detach().item(),
+                            f"teacher/{loss_name}": loss.detach().item(),
                         }
                     )
 

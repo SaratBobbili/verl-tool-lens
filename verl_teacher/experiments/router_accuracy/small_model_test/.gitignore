@@ -1,0 +1,4 @@
+raw_eval_results/*
+raw_train_records/*
+training_data/*
+validation_data/*

@@ -20,6 +20,7 @@ This trainer supports model-agonistic model initialization with huggingface
 
 import json
 import os
+import random
 import uuid
 from collections import defaultdict
 from copy import deepcopy
@@ -578,11 +579,12 @@ class TeacherRunner:
                 metrics = self.teacher_train_wg.update_teacher(data)
 
                 # Print the MSE loss averaged over the micro-batches for this step
-                mse_per_micro_batch = metrics.meta_info.get('metrics', {}).get('teacher/mse_loss', None)
+                loss_name = "mse_loss" if self.config.teacher.get("use_mse_loss", False) else "bce_loss"
+                mse_per_micro_batch = metrics.meta_info.get('metrics', {}).get(f'teacher/{loss_name}', None)
                 if mse_per_micro_batch:
                     mse_per_micro_batch = [mse[0] for mse in mse_per_micro_batch]  # convert list of lists to list of floats
                     avg_mse = sum(mse_per_micro_batch) / len(mse_per_micro_batch)
-                    print(f"Step {self.global_steps}: Average MSE loss = {avg_mse}")
+                    print(f"Step {self.global_steps}: Average {loss_name} = {avg_mse}")
             else:
                 if self.using_online_data:
                     # TODO: Get the actual prompts based on their IDs, and construct the DataProto
@@ -593,7 +595,6 @@ class TeacherRunner:
                     # raise NotImplementedError("Handling end of training for offline data not implemented yet")
 
             self.global_steps += 1
-            break # Temporary break
 
         # Save a teacher checkpoint at the end of training
         self._save_checkpoint()

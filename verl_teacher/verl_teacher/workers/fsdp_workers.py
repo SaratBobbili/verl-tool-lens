@@ -212,8 +212,8 @@ class TeacherTrainWorker(Worker, DistProfilerExtension):
     def _build_teacher_model_optimizer(self, config):
         # the following line is necessary
         from torch.distributed.fsdp import MixedPrecision
-
-        from verl.utils.model import load_valuehead_model, print_model_size
+        from verl.utils.model import print_model_size, load_valuehead_model
+        from verl_teacher.utils.model import load_meanpool_valuehead_model
         from verl.utils.torch_dtypes import PrecisionType
 
         use_shm = config.model.get("use_shm", False)
@@ -272,8 +272,9 @@ class TeacherTrainWorker(Worker, DistProfilerExtension):
             teacher_model_config.classifier_dropout = 0.0
             teacher_model_config.hidden_dropout = "0"
             teacher_model_config.summary_dropout_prob = 0.0
-
-            teacher_module = load_valuehead_model(
+            
+            load_fn = load_meanpool_valuehead_model if config.model.get("use_mean_pooling", False) else load_valuehead_model
+            teacher_module = load_fn(
                 local_path,
                 torch_dtype,
                 teacher_model_config,
@@ -368,8 +369,10 @@ class TeacherTrainWorker(Worker, DistProfilerExtension):
 
         # Note: We force turn off CPUOffload for teacher because it causes incorrect results when using grad accumulation
         if config.strategy == "fsdp":
-            teacher_module = FSDP(
-                teacher_module,
+            # Because value head is ignored by FSDP, need to manually move it to the right device
+            teacher_module.value_head.to(get_device_id())
+            teacher_module.base_model = FSDP(
+                teacher_module.base_model,
                 param_init_fn=init_fn,
                 use_orig_params=self.use_orig_params,
                 auto_wrap_policy=auto_wrap_policy,
@@ -381,7 +384,12 @@ class TeacherTrainWorker(Worker, DistProfilerExtension):
                 device_mesh=self.device_mesh,
                 cpu_offload=None,
             )
-        elif config.strategy == "fsdp2":
+            # Use parameter groups to include both backbone and value head parameters in the optimizer
+            params = [
+                {"params": teacher_module.base_model.parameters()},
+                {"params": teacher_module.value_head.parameters()},
+            ]
+        elif config.strategy == "fsdp2": # NOTE: This is the branch currently used in test_special_dp_teacher_train.py
             assert CPUOffloadPolicy is not None, "PyTorch version >= 2.4 is required for using fully_shard API (FSDP2)"
             mp_policy = MixedPrecisionPolicy(
                 param_dtype=param_dtype, reduce_dtype=reduce_dtype, cast_forward_inputs=True
@@ -402,6 +410,7 @@ class TeacherTrainWorker(Worker, DistProfilerExtension):
             full_state = teacher_module.state_dict()
             apply_fsdp2(teacher_module, fsdp_kwargs, fsdp_config)
             fsdp2_load_full_state_dict(teacher_module, full_state, fsdp_mesh, offload_policy)
+            params = teacher_module.parameters()
         else:
             raise NotImplementedError(f"Unknown strategy {config.strategy}")
 
@@ -411,7 +420,7 @@ class TeacherTrainWorker(Worker, DistProfilerExtension):
 
         log_gpu_memory_usage("After teacher FSDP", logger=None)
 
-        teacher_optimizer = build_optimizer(teacher_module.parameters(), config.optim)
+        teacher_optimizer = build_optimizer(params, config.optim)
 
         total_steps = config.optim.get("total_training_steps", 0)
         num_warmup_steps = int(config.optim.get("lr_warmup_steps", -1))
@@ -595,8 +604,8 @@ class TeacherScoreWorker(Worker, DistProfilerExtension):
         """Build teacher model for inference only. No optimizer or LR scheduler."""
         # the following line is necessary
         from torch.distributed.fsdp import MixedPrecision
-
-        from verl.utils.model import load_valuehead_model, print_model_size
+        from verl.utils.model import print_model_size, load_valuehead_model
+        from verl_teacher.utils.model import load_meanpool_valuehead_model
         from verl.utils.torch_dtypes import PrecisionType
 
         use_shm = config.model.get("use_shm", False)
@@ -656,7 +665,8 @@ class TeacherScoreWorker(Worker, DistProfilerExtension):
             teacher_model_config.hidden_dropout = "0"
             teacher_model_config.summary_dropout_prob = 0.0
 
-            teacher_module = load_valuehead_model(
+            load_fn = load_meanpool_valuehead_model if config.model.get("use_mean_pooling", False) else load_valuehead_model
+            teacher_module = load_fn(
                 local_path,
                 torch_dtype,
                 teacher_model_config,
@@ -737,8 +747,10 @@ class TeacherScoreWorker(Worker, DistProfilerExtension):
         self.use_orig_params = fsdp_config.get("use_orig_params", False)
 
         if config.strategy == "fsdp":
-            teacher_module = FSDP(
-                teacher_module,
+            # Because value head is ignored by FSDP, need to manually move it to the right device
+            teacher_module.value_head.to(get_device_id())
+            teacher_module.base_model = FSDP(
+                teacher_module.base_model,
                 param_init_fn=init_fn,
                 use_orig_params=self.use_orig_params,
                 auto_wrap_policy=auto_wrap_policy,
@@ -749,6 +761,7 @@ class TeacherScoreWorker(Worker, DistProfilerExtension):
                 forward_prefetch=self.config.model.fsdp_config.forward_prefetch,
                 device_mesh=self.device_mesh,
                 cpu_offload=None,
+                ignored_modules=[teacher_module.value_head] # NOTE: Not tested yet
             )
         elif config.strategy == "fsdp2":
             assert CPUOffloadPolicy is not None, "PyTorch version >= 2.4 is required for using fully_shard API (FSDP2)"

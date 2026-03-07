@@ -52,7 +52,7 @@ import os, shutil
 
 # megatron and fsdp2 currently fail for me, but I don't need to use them
 # @pytest.mark.parametrize("strategy", ["megatron", "fsdp", "fsdp2"])
-@pytest.mark.parametrize("strategy", ["fsdp"])
+@pytest.mark.parametrize("strategy", ["fsdp2"])
 def test_teacher_train_worker(strategy):
 	assert strategy == "fsdp" or strategy == "fsdp2", f"Strategy {strategy} is not supported for TeacherTrainWorker"
 
@@ -62,6 +62,7 @@ def test_teacher_train_worker(strategy):
 		# This requires an absolute path
 		with initialize_config_dir(config_dir=os.path.join(os.path.dirname(__file__), "..", "..", "verl_teacher", "config")):  
 			config = compose(config_name="teacher_runner", overrides=[
+				"teacher.strategy=" + strategy,
 				"teacher.micro_batch_size_per_gpu=256",
 				"teacher.model.path=Qwen/Qwen2.5-1.5B-Instruct"
 			])  
@@ -130,7 +131,7 @@ def test_teacher_train_worker(strategy):
 	)
 
 	# add ppo data
-	data.batch["scores"] = torch.rand_like(responses, dtype=torch.float32)
+	data.batch["scores"] = torch.randn((batch_size, 1), dtype=torch.float32)
 
 	# update again
 	metrics = wg.update_teacher(data)

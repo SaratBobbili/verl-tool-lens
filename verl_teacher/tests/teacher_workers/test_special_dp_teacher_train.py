@@ -72,7 +72,7 @@ class TestTeacherTrainWorker(unittest.TestCase):
         config.save_pretrained(self.temp_dir)
 
         self.config = FSDPTeacherConfig(
-            strategy="fsdp2",
+            strategy="fsdp2", # TODO: Make separates tests for fsdp and fsdp2
             mini_batch_size=4,
             micro_batch_size_per_gpu=2,
             forward_micro_batch_size_per_gpu=2,
@@ -86,8 +86,11 @@ class TestTeacherTrainWorker(unittest.TestCase):
             model=FSDPTeacherModelCfg(
                 path="Qwen/Qwen2.5-0.5B-Instruct",
                 tokenizer_path="Qwen/Qwen2.5-0.5B-Instruct",
-                fsdp_config=FSDPEngineConfig(fsdp_size=-1),
+                # TODO: Find a way to keep reshard_after_forward=True (right now it crashes with fsdp2; not sure 
+                # about fsdp)
+                fsdp_config=FSDPEngineConfig(fsdp_size=-1, reshard_after_forward=False),
                 use_remove_padding=False,
+                # use_mean_pooling=False, # TODO: Make a separate test where use_mean_pooling is False
             ),
         )
         assert self.world_size <= 4 // 2
@@ -104,7 +107,7 @@ class TestTeacherTrainWorker(unittest.TestCase):
         attention_mask = torch.ones(batch_size, seq_len, dtype=torch.long)
         position_ids = torch.arange(seq_len).unsqueeze(0).expand(batch_size, -1)
         response_mask = torch.ones(batch_size, response_len, dtype=torch.float)
-        scores = torch.randn(batch_size, response_len, dtype=torch.float)
+        scores = torch.randn(batch_size, 1, dtype=torch.float)
 
         batch = TensorDict(
             {
@@ -148,7 +151,8 @@ class TestTeacherTrainWorker(unittest.TestCase):
         self.assertIn("metrics", result.meta_info)
         metrics = result.meta_info["metrics"]
 
-        expected_keys = ["teacher/mse_loss", "teacher/grad_norm"]
+        loss_type = "mse" if self.config.get("use_mse_loss", False) else "bce"
+        expected_keys = [f"teacher/{loss_type}_loss", "teacher/grad_norm"]
         for key in expected_keys:
             self.assertIn(key, metrics)
 

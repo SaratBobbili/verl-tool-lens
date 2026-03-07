@@ -100,11 +100,3 @@ def need_critic(config: DictConfig) -> bool:
             stacklevel=2,
         )
         return False
-
-def need_teacher_train(role_worker_mapping: dict[Role, WorkerType]) -> bool:
-    """Given a role worker mapping, do we need teacher trainer."""
-    return Role.TeacherTrain in role_worker_mapping
-
-def need_teacher_score(role_worker_mapping: dict[Role, WorkerType]) -> bool:
-    """Given a role worker mapping, do we need teacher scorer."""
-    return Role.TeacherScore in role_worker_mapping

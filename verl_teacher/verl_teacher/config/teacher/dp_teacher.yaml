@@ -20,7 +20,7 @@ defaults:
 _target_: verl_teacher.workers.config.FSDPTeacherConfig
 
 # distribution strategy. Options: fsdp (deprecating), fsdp2
-strategy: fsdp
+strategy: fsdp2
 
 # model config for the teacher
 model:
@@ -50,6 +50,9 @@ model:
 
   # LoRA target modules: "all-linear" or list of linear projection layers
   target_modules: all-linear
+
+  # Whether to use mean pooling for the value head (instead of taking the last token)
+  use_mean_pooling: False
 
 # Forward-only batch size during inference (global)
 forward_micro_batch_size: ${oc.select:.micro_batch_size,null}

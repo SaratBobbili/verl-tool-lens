@@ -78,6 +78,7 @@ class TeacherConfig(BaseConfig):
     cliprange_value: float = 0.5
     loss_agg_mode: str = "token-mean"
     micro_batch_size: Optional[int] = None
+    use_mse_loss: bool = False
     engine: BaseConfig = field(default_factory=BaseConfig)
     optim: OptimizerConfig = field(default_factory=OptimizerConfig)
     # deprecate model to favor model_config
@@ -244,3 +245,4 @@ class FSDPTeacherModelCfg(BaseModelConfig):
     lora_rank: int = 0
     lora_alpha: int = 16
     target_modules: str | list[str] = "all-linear"
+    use_mean_pooling: bool = True

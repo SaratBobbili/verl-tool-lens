@@ -14,6 +14,9 @@ trainer_enable: True
 # use the trainer should be enabled as well so that the teacher can learn to give useful outputs)
 scorer_enable: False
 
+# Whether to use MSE loss instead of BCE loss for the teacher
+use_mse_loss: False
+
 # optimizer configs
 optim:
 

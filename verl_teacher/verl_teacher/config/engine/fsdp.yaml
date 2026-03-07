@@ -19,7 +19,8 @@ optimizer_offload: false
 offload_policy: false
 
 # Only for FSDP2: Reshard after forward pass to reduce memory footprint
-reshard_after_forward: true
+# This throws an error when used with mean pooling, so we set it to False for now.
+reshard_after_forward: false
 
 # Number of GPUs in each FSDP shard group; -1 means auto
 fsdp_size: -1

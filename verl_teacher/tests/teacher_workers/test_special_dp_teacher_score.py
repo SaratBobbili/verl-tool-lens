@@ -72,7 +72,7 @@ class TestTeacherScoreWorker(unittest.TestCase):
         config.save_pretrained(self.temp_dir)
 
         self.config = FSDPTeacherConfig(
-            strategy="fsdp2",
+            strategy="fsdp",
             mini_batch_size=4,
             micro_batch_size_per_gpu=2,
             forward_micro_batch_size_per_gpu=2,
@@ -86,8 +86,11 @@ class TestTeacherScoreWorker(unittest.TestCase):
             model=FSDPTeacherModelCfg(
                 path="Qwen/Qwen2.5-0.5B-Instruct",
                 tokenizer_path="Qwen/Qwen2.5-0.5B-Instruct",
-                fsdp_config=FSDPEngineConfig(fsdp_size=-1),
+                # TODO: Find a way to keep reshard_after_forward=True (right now it crashes with fsdp2; not sure 
+                # about fsdp)
+                fsdp_config=FSDPEngineConfig(fsdp_size=-1, reshard_after_forward=False),
                 use_remove_padding=False,
+                # use_mean_pooling=False,
             ),
         )
         assert self.world_size <= 4 // 2
