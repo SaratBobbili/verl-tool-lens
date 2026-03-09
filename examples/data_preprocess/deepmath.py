@@ -32,6 +32,8 @@ simple_rl_system_prompt = '''Please reason step by step, and put your final answ
 torl_system_prompt = '''A conversation between User and Assistant. The user asks a question, and the Assistant solves it. Please integrate natural language reasoning with programs to solve the problem above, and put your final answer within \\boxed{}.
 '''
 
+custom_system_prompt = """A conversation between user and assistant. The user asks a question, and the assistant solves it. The assistant first thinks about the reasoning process in the mind, and then either continues reasoning with a python code block OR provides the answer. If the assistant chooses to integrate natural language reasoning with programs to solve the problem. It should do so by writing in a python markdown code block, then the stdout and stderr result will be appended in an output code block like "```python\n your code here\n```\n```output\n result here\n```" immediately after the reasoning. The reasoning process, and answer are enclosed within <think> </think> and <answer> </answer> tags, respectively, i.e., <think> reasoning process here </think>, <answer> answer here </answer>. Please put your final answer within \boxed{}."""
+
 def apply_system_prompt(sys_prompt_style:str, question:str):
     """
     Apply the system prompt style to the question.
@@ -45,6 +47,8 @@ def apply_system_prompt(sys_prompt_style:str, question:str):
         return [{'role': 'system', 'content': simple_rl_system_prompt}, {'role': 'user', 'content': question}]
     elif sys_prompt_style == 'torl':
         return [{'role': 'system', 'content': torl_system_prompt}, {'role': 'user', 'content': question}]
+    elif sys_prompt_style == 'custom':
+        return [{'role': 'system', 'content': custom_system_prompt}, {'role': 'user', 'content': question}]
     else:
         raise ValueError(f"Unknown system prompt style: {sys_prompt_style}")
 
