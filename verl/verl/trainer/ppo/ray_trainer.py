@@ -1171,17 +1171,25 @@ class RayPPOTrainer:
                             reward_tensor, reward_extra_infos_dict = compute_reward(batch, self.reward_fn)
 
                     # Compute per-group same-reward count (currently assuming single-turn) 
-                    if "index" in batch.non_tensor_batch:  
-                        index = batch.non_tensor_batch["index"]  
-                        # Sum rewards per rollout to get sequence-level rewards  
-                        seq_rewards = reward_tensor.sum(dim=-1)  # shape: (batch_size,)  
-                        # Group by prompt index  
-                        groups = {}  
-                        for i, idx in enumerate(index):  
-                            groups.setdefault(idx, []).append(seq_rewards[i].item())  
-                        # Count groups where all rewards are identical  
-                        same_reward_groups = sum(1 for vals in groups.values() if len(set(vals)) == 1)
-                        metrics["data/zero_adv_ratio"] = same_reward_groups/len(groups) if len(groups) > 0 else 0.0
+                    assert "index" in batch.non_tensor_batch
+                    index = batch.non_tensor_batch["index"]  
+                    # Sum rewards per rollout to get sequence-level rewards  
+                    seq_rewards = reward_tensor.sum(dim=-1)  # shape: (batch_size,)  
+                    # Group by prompt index  
+                    groups = {}  
+                    for i, idx in enumerate(index):  
+                        groups.setdefault(idx, []).append(seq_rewards[i].item())  
+                    # Count groups where all rewards are identical  
+                    same_reward_groups = sum(1 for vals in groups.values() if len(set(vals)) == 1)
+                    metrics["data/zero_adv_ratio"] = same_reward_groups/len(groups) if len(groups) > 0 else 0.0
+
+                    # # Compute empirical success rates and send to teacher if configured
+                    # if self.config.trainer.send_success_rate_to_teacher:
+                    #     success_threshold = self.config.trainer.get("success_threshold", 0.0)
+                    #     success_counts = {idx: sum(1 for r in rewards if r >= success_threshold) for idx, rewards in groups.items()}
+                    #     total_counts = {idx: len(rewards) for idx, rewards in groups.items()}
+                    #     success_rates = {idx: success_counts[idx] / total_counts[idx] if total_counts[idx] > 0 else 0.0 for idx in groups.keys()}
+                    #     
 
                     # recompute old_log_probs
                     with marked_timer("old_log_prob", timing_raw, color="blue"):
