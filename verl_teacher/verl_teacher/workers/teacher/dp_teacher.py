@@ -39,44 +39,6 @@ from verl_teacher.workers.teacher import BaseTeacher
 logger = logging.getLogger(__file__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 
-# def compute_mse_loss(
-#     preds: torch.Tensor,
-#     scores: torch.Tensor,
-# ):
-#     """
-#     Compute the MSE loss for regression with the teacher model.
-
-#     Loosely based on compute_value_loss in core_algos
-
-#     Args:
-#         preds (torch.FloatTensor):
-#             Predicted values from the value head, shape (batch_size, response_length).
-#         scores (torch.FloatTensor):
-#             Ground truth scores, shape (batch_size, response_length).
-
-#     Returns:
-#         mse_loss (torch.FloatTensor):
-#             A scalar tensor containing the aggregated MSE loss.
-#     """
-#     mse_loss = (preds - scores) ** 2
-#     return mse_loss.mean()
-
-# def compute_bce_loss(
-#     logits: torch.Tensor,
-#     scores: torch.Tensor,
-# ):
-#     """
-#     Compute the BCE loss  with the teacher model.
-
-#     Args:
-#         logits (torch.FloatTensor):
-#             Predicted logits from the value head, shape (batch_size, num_outputs).
-#         scores (torch.FloatTensor):
-#             Empirical success probabilities, shape (batch_size, num_outputs).
-#     """
-#     bce_loss = nn.BCEWithLogitsLoss()(logits, scores)
-#     return bce_loss.mean()
-
 class DataParallelTeacher(BaseTeacher):
     def __init__(self, config, teacher_module: nn.Module, teacher_optimizer: optim.Optimizer):
         super().__init__(config=config)

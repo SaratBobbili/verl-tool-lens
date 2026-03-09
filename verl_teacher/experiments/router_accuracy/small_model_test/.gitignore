@@ -2,3 +2,10 @@ raw_eval_results/*
 raw_train_records/*
 training_data/*
 validation_data/*
+*.png
+
+# Ignore checkpoint files
+*.json
+*.jinja
+*.txt
+*.safetensors

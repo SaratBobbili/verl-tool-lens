@@ -5,7 +5,7 @@ n_gpus_per_node=4
 
 PYTHONUNBUFFERED=1 python3 -m verl_teacher.main_teacher \
     teacher.model.use_mean_pooling=False \
-    teacher.use_mse_loss=False \
+    teacher.use_mse_loss=True \
     teacher.model.path="Qwen/Qwen2.5-Math-1.5B" \
     teacher.micro_batch_size_per_gpu=32 \
     teacher.mini_batch_size=128 \
