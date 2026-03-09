@@ -541,7 +541,20 @@ class TeacherRunner:
                     # TODO: Get the actual prompts based on their IDs, and construct the DataProto
                     # We will also need to extract the question from the chat template, unless we use a separate dataset
                     # where the prompts are simplified
-                    pass
+                    prompt_indices, esrs = zip(*batch_tuples)
+                    prompts = [
+                        extract_question_from_chat_template(self.dataset[int(idx)]["input"])
+                        for idx in prompt_indices
+                    ]
+                    
+                    avg_scores = list(esrs)
+                    tokenized = self.tokenizer(prompts, padding=True, padding_side="right", return_tensors="pt")
+                    input_ids = tokenized.input_ids
+                    attention_mask = tokenized.attention_mask
+                    position_ids = torch.arange(input_ids.shape[1]).unsqueeze(0).expand_as(input_ids)
+                    response_mask = attention_mask.clone()
+                    scores = torch.tensor(avg_scores, dtype=torch.float32).unsqueeze(1)
+
                 else:
                     # For offline data, the batch_tuples contain strings which must be tokenized to obtain
                     # input_ids and then batched together
