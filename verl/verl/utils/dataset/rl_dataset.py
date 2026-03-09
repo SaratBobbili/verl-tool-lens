@@ -441,7 +441,14 @@ class RLHFDataset(Dataset):
         # add index for each prompt
         if "extra_info" not in row_dict or row_dict["extra_info"] is None:
             row_dict["extra_info"] = dict()
-        index = row_dict.get("extra_info", {}).get("index", 0)
+        if "index" not in row_dict["extra_info"]:
+            logger.warning(
+                "extra_info.index is missing; using dataset row id %s as prompt index (data_source=%s)",
+                item,
+                row_dict.get("data_source", "unknown"),
+            )
+            row_dict["extra_info"]["index"] = int(item)
+        index = row_dict["extra_info"]["index"]
         tools_kwargs = row_dict.get("extra_info", {}).get("tools_kwargs", {})
         interaction_kwargs = row_dict.get("extra_info", {}).get("interaction_kwargs", {})
         need_tools_kwargs = row_dict.get("extra_info", {}).get("need_tools_kwargs", self.need_tools_kwargs)
