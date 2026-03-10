@@ -80,7 +80,7 @@ def poll_aggregator(agg, offline=False):
         poll_result = agg.poll_batch()
     else:
         poll_ref = agg.poll_batch.remote()
-        ready, _ = ray.wait([poll_ref], timeout=0.0)
+        ready, _ = ray.wait([poll_ref], timeout=0.1) # timeout needs to be > 0
         if not ready:
             return None
         poll_result = ray.get(ready[0])
@@ -523,7 +523,9 @@ class TeacherRunner:
             assert self.config.offline_data_path is not None, "offline_data_path must be specified for training on offline data"
             # self.aggregator = OfflineAggregator.remote(self.config.offline_data_path, batch_size=self.config.data.train_batch_size)
             self.aggregator = OfflineAggregator(self.config.offline_data_path, batch_size=self.config.data.train_batch_size)
-        
+
+        metrics = {}
+
         # TODO: This loop needs to be interrupted by some kind of signal from the students when it is time to
         # end training
         while True:
@@ -538,22 +540,26 @@ class TeacherRunner:
                 batch_tuples = poll_result[1]
 
                 if self.using_online_data:
-                    # TODO: Get the actual prompts based on their IDs, and construct the DataProto
-                    # We will also need to extract the question from the chat template, unless we use a separate dataset
-                    # where the prompts are simplified
+                    # Ideally we would remove the system prompt since that is the same for every sample, but for 
+                    # simplicity we will keep it in the prompt for now
                     prompt_indices, esrs = zip(*batch_tuples)
-                    prompts = [
-                        extract_question_from_chat_template(self.dataset[int(idx)]["input"])
+                    input_ids = [
+                        self.dataset[int(idx)]["input_ids"]
                         for idx in prompt_indices
                     ]
-                    
-                    avg_scores = list(esrs)
-                    tokenized = self.tokenizer(prompts, padding=True, padding_side="right", return_tensors="pt")
-                    input_ids = tokenized.input_ids
-                    attention_mask = tokenized.attention_mask
-                    position_ids = torch.arange(input_ids.shape[1]).unsqueeze(0).expand_as(input_ids)
+                    attention_mask = [
+                        self.dataset[int(idx)]["attention_mask"]
+                        for idx in prompt_indices
+                    ]
+                    position_ids = [
+                        self.dataset[int(idx)]["position_ids"]
+                        for idx in prompt_indices
+                    ]
+                    input_ids = torch.stack(input_ids)
+                    attention_mask = torch.stack(attention_mask)
+                    position_ids = torch.stack(position_ids)
                     response_mask = attention_mask.clone()
-                    scores = torch.tensor(avg_scores, dtype=torch.float32).unsqueeze(1)
+                    scores = torch.tensor(list(esrs), dtype=torch.float32).unsqueeze(1)  # shape (batch_size, 1)
 
                 else:
                     # For offline data, the batch_tuples contain strings which must be tokenized to obtain
@@ -561,7 +567,7 @@ class TeacherRunner:
                     prompts = [extract_question_from_chat_template(batch_tuple["input"]) for batch_tuple in batch_tuples]
                     # Also convert from [-1,1] scale to [0,1] scale
                     avg_scores = [(batch_tuple["avg_score"] + 1.0) / 2.0 for batch_tuple in batch_tuples]
-                    tokenized = self.tokenizer(prompts, padding=True, padding_side='right', return_tensors="pt")
+                    tokenized = self.tokenizer(prompts, padding=True, padding_side='left', return_tensors="pt")
                     input_ids = tokenized.input_ids
                     attention_mask = tokenized.attention_mask
                     position_ids = torch.arange(input_ids.shape[1]).unsqueeze(0).expand_as(input_ids)
@@ -589,24 +595,28 @@ class TeacherRunner:
                 else:
                     data.meta_info["non_pad_indices"] = list(range(len(data)))
 
-                metrics = self.teacher_train_wg.update_teacher(data)
+                teacher_train_output_metrics = self.teacher_train_wg.update_teacher(data)
 
                 # Print the MSE loss averaged over the micro-batches for this step
                 loss_name = "mse_loss" if self.config.teacher.get("use_mse_loss", False) else "bce_loss"
-                mse_per_micro_batch = metrics.meta_info.get('metrics', {}).get(f'teacher/{loss_name}', None)
+                mse_per_micro_batch = teacher_train_output_metrics.meta_info.get('metrics', {}).get(f'teacher/{loss_name}', None)
+                # TODO: This is not showing up in wandb
+                # metrics.update(reduce_metrics(teacher_train_output_metrics.meta_info.get('metrics', {})))
                 if mse_per_micro_batch:
                     mse_per_micro_batch = [mse[0] for mse in mse_per_micro_batch]  # convert list of lists to list of floats
                     avg_mse = sum(mse_per_micro_batch) / len(mse_per_micro_batch)
+                    # metrics[f'teacher/avg_{loss_name}'] = avg_mse
                     print(f"Step {self.global_steps}: Average {loss_name} = {avg_mse}")
             else:
                 if self.using_online_data:
-                    # TODO: Get the actual prompts based on their IDs, and construct the DataProto
-                    pass
+                    # Not enough training data is available; should switch to inference mode
+                    continue
                 else:
                     print("All training data used")
                     break
                     # raise NotImplementedError("Handling end of training for offline data not implemented yet")
 
+            logger.log(data=metrics, step=self.global_steps)
             self.global_steps += 1
 
         # Save a teacher checkpoint at the end of training

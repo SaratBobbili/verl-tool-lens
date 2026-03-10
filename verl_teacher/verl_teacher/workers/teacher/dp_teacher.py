@@ -134,12 +134,15 @@ class DataParallelTeacher(BaseTeacher):
                 
                 # The output shape will be (bsz, num_outputs) where num_outputs matches the number of student models
                 if not self.config.model.get("use_mean_pooling", False):
-                    response_lengths = attention_mask.sum(dim=1, keepdim=True)
-                    # In case we have any all-padding sequences, clamp the last token index to be at least 0 to avoid negative indexing
-                    last_token_idx = (response_lengths - 1).clamp_min(0).long()
-                    # TODO: Make this work for num_outputs > 1
-                    scores = torch.gather(scores, 1, last_token_idx.unsqueeze(-1))
-                    scores = scores.squeeze(-1) # (bsz, num_outputs)
+                    # The VeRL dataloader left-pads by default, so handle that here
+                    scores = scores[:, -1, :]  # take the last token's output as the score
+                    ### Old code before we switched to left padding:
+                    # response_lengths = attention_mask.sum(dim=1, keepdim=True)
+                    # # In case we have any all-padding sequences, clamp the last token index to be at least 0 to avoid negative indexing
+                    # last_token_idx = (response_lengths - 1).clamp_min(0).long()
+                    # # TODO: Make this work for num_outputs > 1
+                    # scores = torch.gather(scores, 1, last_token_idx.unsqueeze(-1))
+                    # scores = scores.squeeze(-1) # (bsz, num_outputs)
             return scores
 
     def _optimizer_step(self):

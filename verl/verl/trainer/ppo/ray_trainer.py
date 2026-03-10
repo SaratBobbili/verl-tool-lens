@@ -61,6 +61,7 @@ from verl.utils.seqlen_balancing import calculate_workload, get_seqlen_balanced_
 from verl.utils.torch_functional import masked_mean
 from verl.utils.tracking import ValidationGenerationsLogger
 
+from verl_teacher.utils.comms import Aggregator
 
 @dataclass
 class ResourcePoolManager:
@@ -1045,6 +1046,9 @@ class RayPPOTrainer:
         # load checkpoint before doing anything
         self._load_checkpoint()
 
+        # Connect to the aggregator
+        self.aggregator = ray.get_actor("teacher_agg", namespace="teacher")
+
         # perform validation before training
         # currently, we only support validation using the reward_function.
         if self.val_reward_fn is not None and self.config.trainer.get("val_before_train", True):
@@ -1192,8 +1196,9 @@ class RayPPOTrainer:
                             for idx in groups.keys()
                         }
                         esr_stats = {
-                            "prompt_esr": {int(idx): float(rate) for idx, rate in success_rates.items()}
+                            "payload": {int(idx): float(rate) for idx, rate in success_rates.items()}
                         }
+                        result = ray.get(self.aggregator.add.remote(esr_stats))
 
                     # recompute old_log_probs
                     with marked_timer("old_log_prob", timing_raw, color="blue"):

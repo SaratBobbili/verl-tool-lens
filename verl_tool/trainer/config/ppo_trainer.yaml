@@ -140,6 +140,8 @@ algorithm:
 
 # config for the trainer
 trainer:
+  # NEW: Whether to send empirical success rates to teacher for teacher scoring
+  send_success_rate_to_teacher: False
 
   # Whether to balance batch sizes across distributed workers
   balance_batch: True

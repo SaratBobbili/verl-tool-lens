@@ -1,8 +1,10 @@
 """ Utility classes and functions for communication between the teacher and the student processes """
+import socket
 from typing import Any, Dict, List, Optional, Tuple
 import ray
 import time
-from collections import dequeue
+from collections import deque
+import uuid
 
 __all__ = ["Aggregator", "OfflineAggregator", "Dispatcher"]
 
@@ -19,10 +21,28 @@ class Aggregator:
 
         self.buf: List[Dict[str, Any]] = []
         self.ready: List[Tuple[int, List[Dict[str, Any]]]] = []
-        self._next_batch_id = 0
+        self._next_batch_id = 0 # NOTE: This is replaced with the step index in OfflineAggregator (which starts at 1 instead of 0)
         self._seen_total = 0  # total items accepted
 
+        self.instance_id = uuid.uuid4().hex
+        self.pid = os.getpid()
+        self.hostname = socket.gethostname()
+        print(
+            f"[Aggregator.__init__] instance_id={self.instance_id} "
+            f"pid={self.pid} host={self.hostname} batch_size={self.batch_size}"
+        )
+
+    def identity(self):
+        return {
+            "instance_id": self.instance_id,
+            "pid": self.pid,
+            "hostname": self.hostname,
+            "batch_size": self.batch_size,
+        }
+
     def add(self, d: Dict[str, Any]) -> Dict[str, int]:
+        # TODO: In the future, when there are two students at once, we will need the input d to have a 
+        # student_id field so that we can maintain separate buffers for each student.
         payload = d.get("payload", {})
         # flatten dict → items
         for k, v in payload.items():
@@ -50,6 +70,8 @@ class Aggregator:
         }
 
     def poll_batch(self) -> Optional[Tuple[int, List[Dict[str, Any]]]]:
+        if len(self.buf) > 0:
+            breakpoint()
         if not self.ready:
             return None
         return self.ready.pop(0)
@@ -128,14 +150,15 @@ class OfflineAggregator:
     
     def flush_partial(self):
         raise NotImplementedError("OfflineAggregator does not support flush_partial()")
-    
+
+@ray.remote 
 class Dispatcher:
     """
     Maintains a set of curated batches of training data for each student, and dispatches them upon request.
     Note that there will be some communication overhead in the request/response compared to giving each student
     their own actor for this purpose, but the method of using a single actor on the teacher side makes it easy 
     to ensure that the freshest batches are always sent to the students.
-    The batches ready to be dispatched are stored in a separate dequeue for each student, and the most recently
+    The batches ready to be dispatched are stored in a separate deque for each student, and the most recently
     added batch is always dispatched first to maximize freshness.
     """
     def __init__(self):
@@ -147,7 +170,7 @@ class Dispatcher:
         """ Used by students to register themselves with the teacher. """
         assert student_id in [0, 1], "Students ID should be 0 for the weak student and 1 for the strong student"
         assert student_id not in self.batches_available.keys(), f"Student {student_id} is already registered"
-        self.batches_available[student_id] = dequeue(maxlen=self.maxlen)
+        self.batches_available[student_id] = deque(maxlen=self.maxlen)
 
     def submit_batch(self, batch_desc: Dict[str, Any]):
         """

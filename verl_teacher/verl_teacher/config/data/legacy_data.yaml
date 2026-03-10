@@ -62,7 +62,7 @@ return_full_prompt: False
 shuffle: True
 
 # Seed to use when shuffling the data
-seed: null
+seed: 1
 
 # num dataloader workers
 dataloader_num_workers: 8
