@@ -42,7 +42,8 @@ def apply_system_prompt(sys_prompt_style:str, question:str):
         list: A list of dictionaries representing the conversation with the system prompt applied.
     """
     if sys_prompt_style == 'simple_rl':
-        return [{'role': 'user', 'content': question + '\n' + simple_rl_system_prompt}]
+        # return [{'role': 'user', 'content': question + '\n' + simple_rl_system_prompt}]
+        return [{'role': 'user', 'content': question}]
     elif sys_prompt_style == 'torl':
         return [{'role': 'system', 'content': torl_system_prompt}, {'role': 'user', 'content': question}]
     else:
@@ -50,9 +51,9 @@ def apply_system_prompt(sys_prompt_style:str, question:str):
 
 def main(
     data_source='zwhe99/DeepMath-103K',
-    local_dir='~/data/deepmath_torl',
+    local_dir='data/deep_math_wo_tool',
     hdfs_dir=None,
-    sys_prompt_style= 'torl',
+    sys_prompt_style= 'simple_rl',
 ):
     
     print(f"Loading the {data_source} dataset from huggingface...", flush=True)

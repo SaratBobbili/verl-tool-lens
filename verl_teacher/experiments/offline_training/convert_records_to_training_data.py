@@ -14,6 +14,19 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, Iterable
 
+# TODO: This is used to remove duplicate text from the prompt with data generated before I fixed the
+# deepmath prompts. It is not needed once that data is no longer used
+def remove_second_occurrence(text: str, substring: str) -> str:
+    first = text.find(substring)
+    if first == -1:
+        return text
+
+    second = text.find(substring, first + len(substring))
+    if second == -1:
+        return text
+
+    return text[:second] + text[second + len(substring):]
+
 
 def iter_jsonl(path: Path) -> Iterable[Dict[str, Any]]:
     with path.open("r", encoding="utf-8") as f:
@@ -57,6 +70,8 @@ def aggregate_one_file(
 
         if not isinstance(inp, str):
             continue
+
+        inp = remove_second_occurrence(inp, "\nPlease reason step by step, and put your final answer within \\boxed{}.")
 
         steps_seen.add(st)
         sum_score[inp] += sc

@@ -148,7 +148,7 @@ if __name__ == "__main__":
     prompts = [item["input"] for item in data_raw]
     scores = [item["avg_score"] for item in data_raw]  # assumed to already be in [0, 1]
 
-    tokenized = tokenizer(prompts, padding=True, padding_side="right", return_tensors="pt")
+    tokenized = tokenizer(prompts, padding=True, padding_side="left", return_tensors="pt")
     input_ids = tokenized.input_ids
     attention_mask = tokenized.attention_mask
     position_ids = torch.arange(input_ids.shape[1]).unsqueeze(0).expand_as(input_ids)
