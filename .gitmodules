@@ -1,6 +1,6 @@
 [submodule "benchmarks/math-evaluation-harness"]
 	path = benchmarks/math-evaluation-harness
-	url = https://github.com/Zhuofeng-Li/math-evaluation-harness.git
+	url = https://github.com/5-Jeremy/math-evaluation-harness.git
 [submodule "benchmarks/LiveCodeBench"]
 	path = benchmarks/LiveCodeBench
 	url = https://github.com/jdf-prog/LiveCodeBench.git
