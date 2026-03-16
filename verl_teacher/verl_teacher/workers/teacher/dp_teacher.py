@@ -208,6 +208,9 @@ class DataParallelTeacher(BaseTeacher):
 
         # TODO: Remove response_mask
         select_keys = ["input_ids", "response_mask", "attention_mask", "position_ids", "scores"]
+        # Right now pad_mask is only used in teacher_runner.py, whereas the unit tests do not include it
+        if "pad_mask" in data.batch:
+            select_keys.append("pad_mask")
         has_multi_modal_inputs = "multi_modal_inputs" in data.non_tensor_batch.keys()
         non_tensor_select_keys = ["multi_modal_inputs"] if has_multi_modal_inputs else []
 
@@ -239,6 +242,12 @@ class DataParallelTeacher(BaseTeacher):
 
                     preds = self._forward_micro_batch(model_inputs)
                     scores= scores.to(preds.dtype)  # ensure scores and preds have the same dtype for loss computation
+                    # Ignore any padding elements in the loss computation
+                    if "pad_mask" in micro_batch.batch.keys():
+                        if not micro_batch.batch["pad_mask"].any():
+                            continue # skip this micro_batch if it is entirely padding
+                        preds = preds[micro_batch.batch["pad_mask"].squeeze()]
+                        scores = scores[micro_batch.batch["pad_mask"].squeeze()]
                     loss = self.loss_fn(preds, scores)
                     assert loss.numel() == 1, "Loss should be a single scalar value after reduction"
 

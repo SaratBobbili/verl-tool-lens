@@ -10,7 +10,7 @@ def zero_pad_dataproto(dp, target_bs):
     """
     Pads a DataProto to a target batch size by adding zero entries. If the DataProto's batch size is already 
     equal to the target, it is returned unchanged. If the DataProto's batch size is greater than the target, 
-    an error is raised. An additional meta-info field "non_pad_indices" is added to indicate which entries are 
+    an error is raised. An additional field "pad_mask" is added to indicate which entries are 
     original vs. padded.
     """
     cur = len(dp)
@@ -25,12 +25,14 @@ def zero_pad_dataproto(dp, target_bs):
     for k, v in td.items():
         padded[k] = torch.cat([v, torch.zeros(pad_shape + v.shape[1:], device=v.device, dtype=v.dtype)], dim=0)
 
-    meta_info = dp.meta_info.copy()
-    meta_info["non_pad_indices"] = list(range(cur))
+    # Add pad_mask to indicate which entries are original vs. padded
+    pad_mask = torch.zeros((target_bs, 1), dtype=torch.bool, device=td.device)
+    pad_mask[:cur] = True
+    padded["pad_mask"] = pad_mask
 
     return DataProto(batch=TensorDict(padded, batch_size=[target_bs]),
                      non_tensor_batch=dp.non_tensor_batch,
-                     meta_info=meta_info)
+                     meta_info=dp.meta_info.copy())
 
 def extract_question_from_chat_template(prompt: str) -> str:
     """

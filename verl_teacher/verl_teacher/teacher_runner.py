@@ -585,7 +585,7 @@ class TeacherRunner:
                     meta_info={"global_token_num": torch.sum(attention_mask, dim=-1).tolist()},
                 )
                 # TODO: May be better to avoid the if/else and just always call zero_pad_dataproto, 
-                # which should be modified to add non_pad_indices even if no padding is needed
+                # which should be modified to add pad_mask even if no padding is needed
                 if len(data) < self.config.data.train_batch_size:
                     print(
                         f"Received batch of size {len(data)}, which is smaller than the configured train batch size {self.config.data.train_batch_size}. "
@@ -593,7 +593,7 @@ class TeacherRunner:
                     )
                     data = zero_pad_dataproto(data, self.config.data.train_batch_size)
                 else:
-                    data.meta_info["non_pad_indices"] = list(range(len(data)))
+                    data.batch["pad_mask"] = torch.ones((data.batch["input_ids"].shape[0], 1), dtype=torch.bool)
 
                 teacher_train_output_metrics = self.teacher_train_wg.update_teacher(data)
 
