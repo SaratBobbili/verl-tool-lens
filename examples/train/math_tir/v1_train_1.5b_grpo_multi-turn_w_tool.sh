@@ -9,19 +9,19 @@ export CUDA_VISIBLE_DEVICES=0,1,2,3
 # Set WANDB API key for non-interactive login
 #export WANDB_API_KEY="b6b5b4b6ca196930f9dd15a5e51d9729a6065109"
 
-dataset_name=deepmath_torl # or math_torl_offical to use torl training data
+dataset_name=deepmath_custom # or math_torl_offical to use torl training data
 train_data=$(pwd)/data/${dataset_name}/train.parquet
 val_data=[$(pwd)/data/${dataset_name}/test.parquet,\
 $(pwd)/data/${dataset_name}/math500_test.parquet,\
 $(pwd)/data/${dataset_name}/aime24_test.parquet,\
 $(pwd)/data/${dataset_name}/aime25_test.parquet]
-model_name=Qwen/Qwen2.5-Math-1.5B-Instruct
+model_name=Qwen/Qwen3-1.7B-FP8
 rl_alg=grpo # gae(ppo) or grpo, if grpo, then better set n>1 otherwise the group norm can not be effective
 n_gpus_per_node=4  # Using 6 GPUs: 0,1,2,3,4,5
 n_nodes=1
 n=16
-batch_size=128
-ppo_mini_batch_size=128
+batch_size=64
+ppo_mini_batch_size=16
 max_prompt_length=1024
 max_response_length=3072
 max_obs_length=512
@@ -89,7 +89,7 @@ PYTHONUNBUFFERED=1 python3 -m verl_tool.trainer.main_ppo \
     data.train_files=$train_data \
     data.val_files=$val_data \
     data.train_batch_size=$batch_size \
-    data.val_batch_size=128 \
+    data.val_batch_size=64 \
     data.max_prompt_length=$max_prompt_length \
     data.max_response_length=$max_response_length \
     data.truncation='right' \
@@ -127,7 +127,7 @@ PYTHONUNBUFFERED=1 python3 -m verl_tool.trainer.main_ppo \
     actor_rollout_ref.agent.action_stop_tokens=$action_stop_tokens_file \
     actor_rollout_ref.agent.enable_mtrl=$enable_mtrl \
     actor_rollout_ref.agent.max_action_length=$max_action_length \
-    actor_rollout_ref.agent.max_concurrent_trajectories=32 \
+    actor_rollout_ref.agent.max_concurrent_trajectories=16 \
     +actor_rollout_ref.agent.retokenization=True \
     actor_rollout_ref.agent.tool_call_timeout=90 \
     +actor_rollout_ref.agent.tool_call_max_retries=5 \

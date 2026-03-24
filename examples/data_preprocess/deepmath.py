@@ -210,4 +210,7 @@ if __name__ == '__main__':
 python examples/data_preprocess/deepmath.py --data_source zwhe99/DeepMath-103K --local_dir data/deepmath_simple_rl --sys_prompt_style simple_rl
 # torl system prompt (with code interpreter tool)
 python examples/data_preprocess/deepmath.py --data_source zwhe99/DeepMath-103K --local_dir data/deepmath_torl --sys_prompt_style torl
+
+# custom system prompt (with code interpreter tool)
+python examples/data_preprocess/deepmath.py --data_source zwhe99/DeepMath-103K --local_dir data/deepmath_custom --sys_prompt_style custom
 """

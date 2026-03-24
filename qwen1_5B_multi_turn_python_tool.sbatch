@@ -1,8 +1,8 @@
 #!/bin/bash
-#SBATCH -J fsdp2
+#SBATCH -J custom-system-prompt
 #SBATCH -p gpu-research
 #SBATCH --qos=olympus-research-gpu
-#SBATCH --gres=gpu:a100:4
+#SBATCH --gres=gpu:a100:1
 #SBATCH --cpus-per-task=16
 #SBATCH -t 4-00:00:00
 #SBATCH -o slurm-%x-%j.out
